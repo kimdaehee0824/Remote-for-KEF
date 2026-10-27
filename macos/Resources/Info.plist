@@ -11,9 +11,9 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>KEF Remote</string>
+	<string>Remote for KEF</string>
 	<key>CFBundleDisplayName</key>
-	<string>KEF Remote</string>
+	<string>Remote for KEF</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

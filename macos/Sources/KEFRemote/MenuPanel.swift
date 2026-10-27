@@ -91,7 +91,7 @@ private struct HeaderView: View {
         let controller = model.controller
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(controller.device?.name ?? "KEF Remote")
+                Text(controller.device?.name ?? "Remote for KEF")
                     .font(.headline)
                     .lineLimit(1)
                 Text(subtitle(controller))

@@ -1,4 +1,4 @@
-# KEF Remote for macOS
+# Remote for KEF (macOS)
 
 A menu bar app for KEF W2 speakers. It changes the speaker's own volume (not the Mac's), mutes, and switches inputs, from a panel that works like the Sound module in Control Center.
 
@@ -23,8 +23,8 @@ No third-party dependencies. CryptoKit and CommonCrypto provide the `HMAC_SHA256
 ```bash
 cd macos
 swift test                    # core, KEF driver, shared vectors
-scripts/build-app.sh          # build/KEF Remote.app, signed ad hoc
-open "build/KEF Remote.app"
+scripts/build-app.sh          # build/Remote for KEF.app, signed ad hoc
+open "build/Remote for KEF.app"
 ```
 
 `scripts/build-app.sh --universal` builds for Apple silicon and Intel. You can also open `Package.swift` in Xcode and run the `KEFRemote` scheme. Run as a bare executable, launch at login is unavailable because it needs an app bundle.

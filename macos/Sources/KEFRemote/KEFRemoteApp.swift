@@ -60,7 +60,7 @@ struct MenuBarLabel: View {
     }
 
     private var accessibilityText: String {
-        guard let state = model.controller.snapshot, model.controller.isOnline else { return "KEF Remote, 연결 안 됨" }
-        return state.muted ? "KEF Remote, 음소거" : "KEF Remote, 음량 \(state.volume)"
+        guard let state = model.controller.snapshot, model.controller.isOnline else { return "Remote for KEF, 연결 안 됨" }
+        return state.muted ? "Remote for KEF, 음소거" : "Remote for KEF, 음량 \(state.volume)"
     }
 }
