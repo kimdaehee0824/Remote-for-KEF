@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>KefRemote</AssemblyName>
+    <RootNamespace>KefRemote.Windows</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\KefRemote.Core\KefRemote.Core.csproj" />
+    <ProjectReference Include="..\KefRemote.Drivers\KefRemote.Drivers.csproj" />
+  </ItemGroup>
+</Project>
