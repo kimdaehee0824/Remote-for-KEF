@@ -1,8 +1,5 @@
 using KefRemote.Core;
-using KefRemote.Drivers.BluOS;
 using KefRemote.Drivers.Kef;
-using KefRemote.Drivers.LinkPlay;
-using KefRemote.Drivers.MusicCast;
 
 namespace KefRemote.Drivers;
 
@@ -12,9 +9,6 @@ public static class BuiltInDrivers
     public static readonly IReadOnlyList<DriverDescriptor> All =
     [
         KefW2Driver.Descriptor,
-        BluOsDriver.Descriptor,
-        LinkPlayDriver.Descriptor,
-        MusicCastDriver.Descriptor,
     ];
 
     public static DriverDescriptor Find(string? id) =>

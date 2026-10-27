@@ -47,17 +47,14 @@ Rules for driver authors:
 | Id | Devices | Status | Notes |
 |---|---|---|---|
 | `kef-w2` | KEF LSX II LT, LSX II, LS50 Wireless II, LS60, XIO | **Verified** on LSX II LT only | volume, mute, input. [Protocol](protocol/kef-w2.md) |
-| `bluos` | Bluesound, NAD and other BluOS players | Experimental | HTTP :11000 `/Status`, `/Volume`. Volume and mute |
-| `linkplay` | WiiM, Arylic, Audio Pro and other LinkPlay players | Experimental | `httpapi.asp`, HTTPS first then HTTP. Volume and mute |
-| `musiccast` | Yamaha MusicCast | Experimental | Yamaha Extended Control, main zone. Volume (scaled), mute, input, power |
 
-"Experimental" means the request shapes follow public documentation and reference code and are covered by stub tests, but nobody has run them against the device yet. Reports from owners are very welcome.
+Other players are not bundled because nobody on the project could test them. Candidates with public local HTTP APIs include BluOS (port 11000, `/Status`, `/Volume`), LinkPlay/WiiM (`httpapi.asp`, often HTTPS with a self-signed certificate) and Yamaha MusicCast (Yamaha Extended Control). A driver for any of them is welcome from someone who owns the device.
 
 ## Adding a driver
 
 1. Create `windows/src/KefRemote.Drivers/<Vendor>/<Vendor>Driver.cs` implementing `ISpeakerDriver`. Derive from `HttpDriver` for HTTP devices.
 2. Expose a `DriverDescriptor` (id, display name, supported models, status, whether a password is used, factory) and add it to `BuiltInDrivers.All`.
-3. Add stub tests in `windows/tests/KefRemote.Tests` (see `ExperimentalDriverTests.cs`). A driver may be marked `Verified` only after the safe hardware checks below pass on a real device.
+3. Add stub tests in `windows/tests/KefRemote.Tests` (see `KefW2DriverTests.cs` and `FakeKefDevice.cs` for an in-memory device). Mark the driver `Experimental` until the safe hardware checks below pass on a real device, and include the results in the pull request.
 4. If the protocol has non-obvious parts (crypto, signing), document it in `docs/protocol/` and add language-neutral vectors to `spec/test-vectors/` so the macOS implementation can share them.
 
 ### Safe hardware checks before marking a driver verified

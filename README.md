@@ -1,6 +1,6 @@
 # KEF Remote
 
-Unofficial desktop remote for KEF wireless speakers and other network players. Windows first, macOS next.
+Unofficial desktop remote for KEF wireless speakers, built so other network players can be added. Windows first, macOS next.
 
 [한국어](README.ko.md)
 
@@ -29,11 +29,10 @@ Planned (in progress): global hotkeys with an on-screen volume indicator (Window
 |---|---|
 | KEF LSX II LT | Verified on hardware (firmware 2.1.86) |
 | KEF LSX II, LS50 Wireless II, LS60, XIO | Same W2 protocol, not yet verified |
-| BluOS (Bluesound, NAD) | Experimental |
-| LinkPlay (WiiM, Arylic, Audio Pro) | Experimental |
-| Yamaha MusicCast | Experimental |
 
-Owners of the unverified players: please try it and open an issue with the result. See [docs/drivers.md](docs/drivers.md) for the safe checks and for adding a new player.
+Other players (BluOS, WiiM/LinkPlay, Yamaha MusicCast, ...) are not included because they could not be tested. The app talks to devices through a small driver contract, so adding one is a single class plus tests. If you own one, see [docs/drivers.md](docs/drivers.md) for the contract and the safe hardware checks, and send a pull request.
+
+Owners of the unverified KEF models: please try it and open an issue with the result.
 
 ## Build
 

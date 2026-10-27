@@ -19,17 +19,8 @@ public abstract class HttpDriver : IDisposable
         };
     }
 
-    public static HttpMessageHandler CreateHandler(bool acceptSelfSignedLocalCertificates = false)
-    {
-        var handler = new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false };
-        if (acceptSelfSignedLocalCertificates)
-        {
-            // Players such as WiiM serve HTTPS with a self-signed certificate. Only private IPv4 hosts
-            // are reachable through HostAddress.ParseLocal, so accepting it does not extend to the internet.
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-        }
-        return handler;
-    }
+    public static HttpMessageHandler CreateHandler() =>
+        new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false };
 
     protected async Task<string> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {

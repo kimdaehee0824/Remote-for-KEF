@@ -1,6 +1,6 @@
 # KEF Remote
 
-KEF 무선 스피커와 다른 네트워크 플레이어를 위한 비공식 데스크톱 리모컨입니다. Windows를 먼저 지원하고 macOS를 이어서 지원합니다.
+KEF 무선 스피커용 비공식 데스크톱 리모컨입니다. 다른 네트워크 플레이어도 붙일 수 있는 구조로 만들었습니다. Windows를 먼저 지원하고 macOS를 이어서 지원합니다.
 
 [English](README.md)
 
@@ -24,11 +24,8 @@ KEF 무선 스피커와 다른 네트워크 플레이어를 위한 비공식 데
 |---|---|
 | KEF LSX II LT | 실기 검증 (펌웨어 2.1.86) |
 | KEF LSX II, LS50 Wireless II, LS60, XIO | 같은 W2 프로토콜, 미검증 |
-| BluOS (Bluesound, NAD) | 실험적 |
-| LinkPlay (WiiM, Arylic, Audio Pro) | 실험적 |
-| Yamaha MusicCast | 실험적 |
 
-새 기기 추가 방법과 안전 점검 절차는 [docs/drivers.md](docs/drivers.md)에 있습니다.
+다른 플레이어(BluOS, WiiM/LinkPlay, Yamaha MusicCast 등)는 실기 테스트를 할 수 없어 넣지 않았습니다. 기기와는 작은 드라이버 계약으로만 통신하므로, 새 기기는 클래스 하나와 테스트로 추가할 수 있습니다. 기기를 가지고 계시면 [docs/drivers.md](docs/drivers.md)의 계약과 안전 점검 절차를 보고 PR을 보내 주세요.
 
 ## 빌드
 

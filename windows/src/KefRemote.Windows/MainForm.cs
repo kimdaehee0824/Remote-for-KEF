@@ -84,7 +84,9 @@ sealed class MainForm : Form
 
         var connectGroup = new GroupBox { Text = "연결 설정", AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(8) };
         var connectLayout = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill };
-        AddRow(connectLayout, "기기 종류", driverBox);
+        var driverCaption = AddRow(connectLayout, "기기 종류", driverBox);
+        // With a single bundled driver there is nothing to choose.
+        driverCaption.Visible = driverBox.Visible = BuiltInDrivers.All.Count > 1;
         AddRow(connectLayout, "IP 주소", hostBox);
         AddRow(connectLayout, "웹페이지 암호", passwordBox);
         connectLayout.Controls.Add(driverNote);
@@ -146,10 +148,12 @@ sealed class MainForm : Form
         base.OnFormClosing(e);
     }
 
-    static void AddRow(TableLayoutPanel layout, string label, Control control)
+    static Label AddRow(TableLayoutPanel layout, string label, Control control)
     {
-        layout.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 8, 0) });
+        var caption = new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 6, 8, 0) };
+        layout.Controls.Add(caption);
         layout.Controls.Add(control);
+        return caption;
     }
 
     async Task ConnectAsync()
