@@ -158,7 +158,7 @@ public class SpeakerControllerTests
         f.Gate = new TaskCompletionSource<bool>();
         var first = c.StepVolumeAsync(1);
         var merged = c.StepVolumeAsync(1);
-        c.StepVolumeAsync(1).Wait(0);
+        _ = c.StepVolumeAsync(1);
         f.Volume = 10; // another controller changed it; steps apply to what is read, not to the old value
         f.Gate.SetResult(true);
         await first;
