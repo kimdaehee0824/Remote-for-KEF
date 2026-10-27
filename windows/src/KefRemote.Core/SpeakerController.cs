@@ -5,7 +5,9 @@ namespace KefRemote.Core;
 ///
 /// Rules (see docs/drivers.md):
 /// - Connecting and polling only read. Nothing is written without a user action.
-/// - One request at a time. Input that arrives while busy is dropped, never queued.
+/// - One request at a time. Mute, input and power commands that arrive while busy are dropped.
+///   Volume input that arrives while busy is merged into a single latest target, applied once the
+///   current request finishes and only if nothing failed or disconnected in between.
 /// - Every command re-reads the device first and aborts if the input changed since the user saw it.
 /// - Every write is confirmed by reading back. A mutation is never retried.
 /// - Any failure invalidates the state, which blocks commands until the next successful poll.
@@ -22,6 +24,14 @@ public sealed class SpeakerController : IDisposable
     int failures;
     int appVolumeLimit = 30;
     CancellationTokenSource cts = new();
+    PendingVolume? pendingVolume;
+
+    sealed class PendingVolume
+    {
+        public int? Target;
+        public int Delta;
+        public readonly TaskCompletionSource Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
 
     public ISpeakerDriver? Driver { get; private set; }
     public DeviceInfo? Device { get; private set; }
@@ -147,6 +157,7 @@ public sealed class SpeakerController : IDisposable
         {
             if (token == generation) Busy = false;
             Notify();
+            if (token == generation) DrainPendingVolume();
         }
     }
 
@@ -156,12 +167,46 @@ public sealed class SpeakerController : IDisposable
             ? windowVisible ? 1500 : 4000
             : Backoff[Math.Min(failures, Backoff.Length) - 1]);
 
-    public Task StepVolumeAsync(int delta) =>
-        Run((before, token) => WriteVolume(before, before.Volume + delta, token));
+    /// <summary>Change the volume relative to the value read right before writing.</summary>
+    public Task StepVolumeAsync(int delta) => VolumeCommand(null, delta);
 
-    /// <summary>Set an absolute volume. Callers coalesce rapid input and send only the latest target.</summary>
-    public Task SetVolumeTargetAsync(int target) =>
-        Run((before, token) => WriteVolume(before, target, token));
+    /// <summary>
+    /// Set an absolute volume. The task completes after the read-back. While busy, the latest
+    /// target replaces earlier ones and the task completes when that merged target is done.
+    /// </summary>
+    public Task SetVolumeTargetAsync(int target) => VolumeCommand(target, 0);
+
+    Task VolumeCommand(int? target, int delta)
+    {
+        if (Busy && IsReady)
+        {
+            var p = pendingVolume ??= new PendingVolume();
+            if (target is int t) (p.Target, p.Delta) = (t, 0);
+            else if (p.Target is int pt) p.Target = pt + delta;
+            else p.Delta += delta;
+            return p.Done.Task;
+        }
+        return Run((before, token) => WriteVolume(before, target ?? before.Volume + delta, token));
+    }
+
+    void DrainPendingVolume()
+    {
+        var p = pendingVolume;
+        if (p == null || Busy) return;
+        pendingVolume = null;
+        if (!CanControl)
+        {
+            p.Done.TrySetResult();
+            return;
+        }
+        _ = CompleteWhenDone(p, Run((before, token) => WriteVolume(before, p.Target ?? before.Volume + p.Delta, token)));
+    }
+
+    static async Task CompleteWhenDone(PendingVolume p, Task task)
+    {
+        try { await task; }
+        finally { p.Done.TrySetResult(); }
+    }
 
     public Task ToggleMuteAsync() => Run((before, token) => WriteMute(before, !before.Muted, token));
 
@@ -272,6 +317,7 @@ public sealed class SpeakerController : IDisposable
         {
             if (token == generation) Busy = false;
             Notify();
+            if (token == generation) DrainPendingVolume();
         }
     }
 
@@ -308,6 +354,8 @@ public sealed class SpeakerController : IDisposable
     void NextGeneration()
     {
         generation++;
+        pendingVolume?.Done.TrySetResult();
+        pendingVolume = null;
         cts.Cancel();
         cts.Dispose();
         cts = new CancellationTokenSource();

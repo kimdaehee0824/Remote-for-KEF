@@ -135,17 +135,78 @@ public class SpeakerControllerTests
     }
 
     [Fact]
-    public async Task InputWhileBusyIsDropped()
+    public async Task VolumeInputWhileBusyMergesIntoLatestTarget()
     {
         var f = new FakeDriver();
         var c = await Connected(f);
         f.Gate = new TaskCompletionSource<bool>();
         var first = c.StepVolumeAsync(1);
-        await c.StepVolumeAsync(1);
-        await c.SetVolumeTargetAsync(25);
+        var second = c.StepVolumeAsync(1);
+        var third = c.SetVolumeTargetAsync(25);
+        Assert.Same(second, third);
         f.Gate.SetResult(true);
         await first;
-        Assert.Equal((1, 21), (f.Writes, f.Volume));
+        await third;
+        Assert.Equal((2, 25), (f.Writes, f.Volume));
+    }
+
+    [Fact]
+    public async Task StepsWhileBusyAreSummedAgainstFreshRead()
+    {
+        var f = new FakeDriver();
+        var c = await Connected(f);
+        f.Gate = new TaskCompletionSource<bool>();
+        var first = c.StepVolumeAsync(1);
+        var merged = c.StepVolumeAsync(1);
+        c.StepVolumeAsync(1).Wait(0);
+        f.Volume = 10; // another controller changed it; steps apply to what is read, not to the old value
+        f.Gate.SetResult(true);
+        await first;
+        await merged;
+        Assert.Equal((2, 13), (f.Writes, f.Volume));
+    }
+
+    [Fact]
+    public async Task MergedVolumeIsDroppedAfterFailure()
+    {
+        var f = new FakeDriver { IgnoreWrites = true };
+        var c = await Connected(f);
+        f.Gate = new TaskCompletionSource<bool>();
+        var first = c.StepVolumeAsync(1);
+        var merged = c.SetVolumeTargetAsync(25);
+        f.Gate.SetResult(true);
+        await first;
+        await merged;
+        Assert.Equal(1, f.Writes);
+    }
+
+    [Fact]
+    public async Task MergedVolumeIsDroppedOnDisconnect()
+    {
+        var f = new FakeDriver();
+        var c = await Connected(f);
+        f.Gate = new TaskCompletionSource<bool>();
+        var first = c.StepVolumeAsync(1);
+        var merged = c.SetVolumeTargetAsync(25);
+        c.Disconnect("bye");
+        await merged;
+        f.Gate.SetResult(true);
+        await first;
+        Assert.Equal(0, f.Writes);
+    }
+
+    [Fact]
+    public async Task MuteAndSourceWhileBusyAreDropped()
+    {
+        var f = new FakeDriver();
+        var c = await Connected(f);
+        f.Gate = new TaskCompletionSource<bool>();
+        var first = c.StepVolumeAsync(1);
+        await c.ToggleMuteAsync();
+        await c.SelectSourceAsync("wifi");
+        f.Gate.SetResult(true);
+        await first;
+        Assert.Equal((1, false, "usb"), (f.Writes, f.Muted, f.Source));
     }
 
     [Fact]

@@ -5,7 +5,7 @@ The apps talk to a player through a small driver contract. A driver translates o
 | Windows (C#) | macOS (Swift) |
 |---|---|
 | `ISpeakerDriver` in `windows/src/KefRemote.Core` | `SpeakerDriver` in `macos/` |
-| `SpeakerController` | `SafeController` |
+| `SpeakerController` | `SpeakerController` (`macos/Sources/KefRemoteCore`) |
 
 ## Contract
 
@@ -33,7 +33,7 @@ Rules for driver authors:
 ## Controller policy (applies to all drivers)
 
 - Startup, reconnect and polling only read. Nothing is written without a user action.
-- One request at a time. Input arriving while busy is dropped, not queued.
+- One request at a time. Mute, input and power commands arriving while busy are dropped. Volume input arriving while busy is merged into one slot holding the latest target (absolute targets replace it, steps are summed and applied to the value read right before writing). The slot is discarded on any failure or disconnect.
 - Each command re-reads first and is cancelled if the input changed since the user saw it.
 - Each write is confirmed by reading back (up to 4 reads, 180 ms apart).
 - Any failure invalidates the state. Commands are blocked until the next successful poll.
