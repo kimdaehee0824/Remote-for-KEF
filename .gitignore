@@ -1,0 +1,14 @@
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+.idea/
+TestResults/
+publish/
+# macOS / Swift
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/

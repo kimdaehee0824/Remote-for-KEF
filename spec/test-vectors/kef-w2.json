@@ -1,0 +1,125 @@
+{
+  "description": "Language-neutral vectors for the KEF W2 HMAC_SHA256_AES256 scheme. See docs/protocol/kef-w2.md. Byte arrays are hex.",
+  "keyDerivation": [
+    {
+      "saltHex": "000102030405",
+      "password": "test",
+      "keyHex": "e353821e4ed26b220f74f0a51a446e990cf3aab96d9d9fdb26651c55ad6cec42"
+    },
+    {
+      "saltHex": "000102030405",
+      "password": "",
+      "keyHex": "17e88db187afd62c16e5debf3e6527cd006bc012bc90b51a810cd80c2d511f43"
+    }
+  ],
+  "encryption": [
+    {
+      "keyHex": "e353821e4ed26b220f74f0a51a446e990cf3aab96d9d9fdb26651c55ad6cec42",
+      "ivHex": "00000000000000000000000000000000",
+      "plaintext": "{\"type\":\"i32_\",\"i32_\":29}",
+      "envelopeBase64": "AAAAAAAAAAAAAAAAAAAAANHBnv7Cohv0UlwT0kE2powAOOfzMKpBLfgyExFvWmRv"
+    },
+    {
+      "keyHex": "17e88db187afd62c16e5debf3e6527cd006bc012bc90b51a810cd80c2d511f43",
+      "ivHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintext": "{\"type\":\"bool_\",\"bool_\":true}",
+      "envelopeBase64": "AAECAwQFBgcICQoLDA0OD3w/SSIw5zG55iBaCw1z1/PqXAJ5Nb/Gg/4E2nkrEQbF"
+    },
+    {
+      "keyHex": "17e88db187afd62c16e5debf3e6527cd006bc012bc90b51a810cd80c2d511f43",
+      "ivHex": "000102030405060708090a0b0c0d0e0f",
+      "plaintext": "{\"type\":\"kefPhysicalSource\",\"kefPhysicalSource\":\"usb\"}",
+      "envelopeBase64": "AAECAwQFBgcICQoLDA0OD9vqF5BVHW6aSHzaO/nZCKOzPdfWXPM1sBL8Q1SSGO/Pdwv7+GRouQY9/WCL8I8AQfmwgULjOOTVITRQecGJbt0="
+    }
+  ],
+  "authorization": [
+    {
+      "method": "POST",
+      "url": "http://192.168.0.14/api/setData",
+      "body": "BODY",
+      "saltHex": "000102030405",
+      "keyHex": "e353821e4ed26b220f74f0a51a446e990cf3aab96d9d9fdb26651c55ad6cec42",
+      "timestampMs": 123,
+      "header": "HMAC_SHA256_AES256 dXNlcg==.AAECAwQF.123.UxPKzH1XQoHWqk6S+u0gpIahtFA8oMDIdjLPiTFPi0A="
+    },
+    {
+      "method": "GET",
+      "url": "http://192.168.0.14/api/getData?path=player%3Avolume&roles=value",
+      "body": null,
+      "saltHex": "000102030405",
+      "keyHex": "e353821e4ed26b220f74f0a51a446e990cf3aab96d9d9fdb26651c55ad6cec42",
+      "timestampMs": 123,
+      "header": "HMAC_SHA256_AES256 dXNlcg==.AAECAwQF.123.eRK7d68ACD8QRUaw4C9gFrJ36lHoButa3Ewt5AqlypI="
+    }
+  ],
+  "secureSetData": [
+    {
+      "host": "192.168.0.14",
+      "password": "",
+      "saltHex": "000102030405",
+      "ivHex": "000102030405060708090a0b0c0d0e0f",
+      "timestampMs": 1761570000000,
+      "path": "player:volume",
+      "typedValue": {
+        "type": "i32_",
+        "i32_": 29
+      },
+      "body": "{\"path\":\"player:volume\",\"role\":\"value\",\"value\":\"AAECAwQFBgcICQoLDA0OD9Iuuya7mK7kNc4uwoTIqI/bgKmbonzqcE2DZuQluR7Z\"}",
+      "header": "HMAC_SHA256_AES256 dXNlcg==.AAECAwQF.1761570000000.bTosWDjG+Yv01W3FT9hwMbfsvjjIPGu/iCI1ou/1rUA="
+    }
+  ],
+  "getDataUrl": [
+    {
+      "host": "192.168.0.14",
+      "path": "player:volume",
+      "url": "http://192.168.0.14/api/getData?path=player%3Avolume&roles=value"
+    },
+    {
+      "host": "192.168.0.14",
+      "path": "settings:/kef/play/physicalSource",
+      "url": "http://192.168.0.14/api/getData?path=settings%3A%2Fkef%2Fplay%2FphysicalSource&roles=value"
+    }
+  ],
+  "responseParsing": [
+    {
+      "json": "[{\"type\":\"i32_\",\"i32_\":32}]",
+      "kind": "int",
+      "expect": 32
+    },
+    {
+      "json": "[{\"type\":\"string_\",\"string_\":\"Daehee LSX II LT\"}]",
+      "kind": "string",
+      "expect": "Daehee LSX II LT"
+    },
+    {
+      "json": "[{\"type\":\"bool_\",\"bool_\":false}]",
+      "kind": "bool",
+      "expect": false
+    },
+    {
+      "json": "[{\"type\":\"kefPhysicalSource\",\"kefPhysicalSource\":\"usb\"}]",
+      "kind": "string",
+      "expect": "usb"
+    },
+    {
+      "json": "[{\"type\":\"i32_\",\"i32_\":\"100\"}]",
+      "kind": "int",
+      "error": true
+    },
+    {
+      "json": "[]",
+      "kind": "int",
+      "error": true
+    },
+    {
+      "json": "[{\"type\":\"i32_\",\"i32_\":1},{\"type\":\"i32_\",\"i32_\":2}]",
+      "kind": "int",
+      "error": true
+    },
+    {
+      "json": "{\"error\":{\"message\":\"denied\"}}",
+      "kind": "int",
+      "error": true
+    }
+  ]
+}
