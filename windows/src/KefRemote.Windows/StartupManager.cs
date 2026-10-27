@@ -6,7 +6,7 @@ namespace KefRemote.Windows;
 public static class StartupManager
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string ValueName = "KefRemote";
+    const string ValueName = "RemoteForKEF";
 
     public static string Command => $"\"{Environment.ProcessPath}\" --background";
 

@@ -41,7 +41,7 @@ sealed class MainForm : Form
     public MainForm(TrayApplicationContext app)
     {
         this.app = app;
-        Text = "KEF Remote";
+        Text = "Remote for KEF";
         Font = SystemFonts.MessageBoxFont ?? Font;
         AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.FixedSingle;
@@ -183,7 +183,7 @@ sealed class MainForm : Form
     {
         if (enabled && StartupManager.IsUnstableLocation)
         {
-            MessageBox.Show(this, "다운로드 또는 임시 폴더에서 실행 중입니다. 앱을 고정된 폴더로 옮긴 뒤 다시 켜 주세요.", "KEF Remote", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "다운로드 또는 임시 폴더에서 실행 중입니다. 앱을 고정된 폴더로 옮긴 뒤 다시 켜 주세요.", "Remote for KEF", MessageBoxButtons.OK, MessageBoxIcon.Information);
             startupBox.Checked = false;
             return;
         }

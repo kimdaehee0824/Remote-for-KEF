@@ -30,7 +30,7 @@ sealed class TrayApplicationContext : ApplicationContext
         controller.Changed += OnChanged;
 
         tray.Icon = SystemIcons.Application;
-        tray.Text = "KEF Remote";
+        tray.Text = "Remote for KEF";
         tray.ContextMenuStrip = menu;
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
         menu.Opening += (_, _) => BuildMenu();
@@ -125,7 +125,7 @@ sealed class TrayApplicationContext : ApplicationContext
     void OnChanged()
     {
         var s = controller.State;
-        string name = controller.Device?.Name ?? "KEF Remote";
+        string name = controller.Device?.Name ?? "Remote for KEF";
         string text = controller.Fresh
             ? $"{name} · {SourceLabel(s.SourceId)} · {s.Volume}{(s.Muted ? " · 음소거" : "")}"
             : $"{name} · {controller.Status}";

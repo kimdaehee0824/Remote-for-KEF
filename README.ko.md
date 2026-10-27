@@ -1,4 +1,4 @@
-# KEF Remote
+# Remote for KEF
 
 KEF 무선 스피커용 비공식 데스크톱 리모컨입니다. 다른 네트워크 플레이어도 붙일 수 있는 구조로 만들었습니다. Windows를 먼저 지원하고 macOS를 이어서 지원합니다.
 
@@ -35,7 +35,7 @@ dotnet test windows/KefRemote.slnx
 dotnet run --project windows/src/KefRemote.Windows
 ```
 
-`KefRemote.exe --background`는 창 없이 트레이로 시작합니다. 설정은 `%LOCALAPPDATA%\KefRemote\settings.json`에 저장하고, 스피커 암호는 현재 Windows 사용자 범위의 DPAPI로 보호합니다.
+`RemoteForKEF.exe --background`는 창 없이 트레이로 시작합니다. 설정은 `%LOCALAPPDATA%\KefRemote\settings.json`에 저장하고, 스피커 암호는 현재 Windows 사용자 범위의 DPAPI로 보호합니다.
 
 ## 라이선스
 

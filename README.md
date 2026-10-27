@@ -1,4 +1,4 @@
-# KEF Remote
+# Remote for KEF
 
 Unofficial desktop remote for KEF wireless speakers, built so other network players can be added. Windows first, macOS next.
 
@@ -44,7 +44,7 @@ dotnet test windows/KefRemote.slnx
 dotnet run --project windows/src/KefRemote.Windows
 ```
 
-`KefRemote.exe --background` starts in the tray without a window. Settings live in `%LOCALAPPDATA%\KefRemote\settings.json`; the speaker password, if any, is protected with Windows DPAPI for the current user.
+`RemoteForKEF.exe --background` starts in the tray without a window. Settings live in `%LOCALAPPDATA%\KefRemote\settings.json`; the speaker password, if any, is protected with Windows DPAPI for the current user.
 
 ## Repository layout
 

@@ -5,7 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <AssemblyName>KefRemote</AssemblyName>
+    <AssemblyName>RemoteForKEF</AssemblyName>
     <RootNamespace>KefRemote.Windows</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
