@@ -19,7 +19,8 @@ read()    -> SpeakerState { power: on|standby|unknown, sourceId?, volume 0-100, 
 setVolume(int 0-100)
 setMute(bool)
 setSource(id)
-setPower(bool)          # only with `power`
+setPower(bool)          # only with `power`; true wakes the device on the input it had before standby
+approachOvershoot(current, target) -> int?   # optional, default none; see "Exact volume matching"
 ```
 
 Rules for driver authors:
@@ -41,12 +42,18 @@ Rules for driver authors:
 - Raises are capped at min(app limit, device limit). Lowering is always allowed. A volume above the cap is shown as is and never forced down.
 - Unmute is refused while the volume is above the cap.
 - Input switching requires mute support: mute, verify, switch, verify. Unmute again only if the new input's volume is not higher than before and not above the cap; otherwise stay muted and say so.
+- Power on is refused while the volume read in standby is above the cap, because the speaker wakes at that volume. Waking to a specific input wakes first, then switches with the muted sequence above. If the woken volume is above the cap, the switch is skipped and the user is told to lower it first.
+- Power changes are confirmed with up to 10 reads 500 ms apart. Read errors during that window are tolerated (the device may restart its network); only the last attempt counts.
+
+### Exact volume matching
+
+Some devices play the same volume number at a different level depending on whether it was reached from below or from above. A driver can report this with `approachOvershoot(current, target)`: a slightly higher value to pass through when raising. When the user turns on 정확한 음량 맞추기 (off by default), the controller writes that value, waits 100 ms and writes the target, which is then verified as usual. The passing value is capped at the limit and never verified on its own; lowering is never affected.
 
 ## Bundled drivers
 
 | Id | Devices | Status | Notes |
 |---|---|---|---|
-| `kef-w2` | KEF LSX II LT, LSX II, LS50 Wireless II, LS60, XIO | **Verified** on LSX II LT only | volume, mute, input. [Protocol](protocol/kef-w2.md) |
+| `kef-w2` | KEF LSX II LT, LSX II, LS50 Wireless II, LS60, XIO | **Verified** on LSX II LT only (power pending) | volume, mute, input, power. Power writes `physicalSource` = `standby` / `powerOn`, as KEF Connect does. Overshoot table from LSX II measurements by [kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume). [Protocol](protocol/kef-w2.md) |
 
 Other players are not bundled because nobody on the project could test them. Candidates with public local HTTP APIs include BluOS (port 11000, `/Status`, `/Volume`), LinkPlay/WiiM (`httpapi.asp`, often HTTPS with a self-signed certificate) and Yamaha MusicCast (Yamaha Extended Control). A driver for any of them is welcome from someone who owns the device.
 
@@ -66,3 +73,4 @@ Run with the volume at a quiet level (30 or below):
 3. Mute and unmute.
 4. If inputs are supported: switch away and back. Confirm the speaker is muted during the switch and the volume did not rise.
 5. Unplug the network during a command. Confirm nothing is replayed after reconnecting.
+6. If power is supported: put the device in standby and wake it, from the app and from the device's own remote. Confirm the app shows both states, that it wakes on the previous input, and that it refuses to wake while the standby volume is above the limit.

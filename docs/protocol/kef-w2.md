@@ -92,4 +92,7 @@ If `authMode` cannot be read, or the device answers 401/403, an HTML page, or an
 
 - The separate account channel on port 4430 (see hilli/go-kef-w2 `auth.go`).
 - The event queue (`/api/event/pollQueue`). Not tested; polling is used instead.
-- Power on/off through `physicalSource` (`powerOn` / `standby`). Not tested.
+
+## Used, not yet tested on hardware
+
+- Power on/off through `physicalSource` (`powerOn` / `standby`), the same write KEF Connect and the community libraries use. `powerOn` should wake the speaker on the input it had before standby. The apps confirm the result through `speakerStatus` and `physicalSource`, tolerating read errors while the speaker changes state.
