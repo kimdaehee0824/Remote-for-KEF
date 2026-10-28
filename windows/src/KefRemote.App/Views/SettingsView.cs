@@ -415,7 +415,7 @@ sealed class SettingsView
 
         panel.Children.Add(Ui.GroupHeader("다른 앱과 겹칠 수 있는 조합"));
         panel.Children.Add(Ui.Secondary(
-            "이 앱이 켜져 있는 동안에는 등록한 조합을 이 앱이 먼저 받습니다. 기본값 Ctrl + Alt + ↑ / ↓는 VS Code(커서 추가), JetBrains IDE(이전·다음 위치), Visual Studio(Ctrl + Alt + ↓, 열린 파일 목록)와 같고, Ctrl + Alt + M은 JetBrains(메서드 추출)와 Word(메모 삽입)와 같습니다. 이런 프로그램을 자주 쓰면 다른 조합으로 바꾸세요. 다른 앱이 먼저 등록한 조합은 위에 '등록하지 못했습니다'로 표시됩니다.",
+            "이 앱이 켜져 있는 동안에는 등록한 조합을 이 앱이 먼저 받습니다. 기본값 Ctrl + Alt + ↑ / ↓는 VS Code(커서 추가), JetBrains IDE(이전·다음 검색 결과), Visual Studio(Ctrl + Alt + ↓, 열린 파일 목록)와 같고, Ctrl + Alt + M은 JetBrains(메서드 추출)와 Word(메모 삽입)와 같습니다. Intel 그래픽 드라이버의 화면 회전 단축키(Ctrl + Alt + 화살표)를 켜 둔 PC에서도 겹칩니다. 이런 프로그램을 자주 쓰면 다른 조합으로 바꾸세요. 다른 앱이 먼저 등록한 조합은 위에 '등록하지 못했습니다'로 표시됩니다.",
             12.5));
 
         reset.Click += (_, _) =>
