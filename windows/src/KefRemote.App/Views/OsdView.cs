@@ -45,6 +45,9 @@ sealed class OsdView : IVolumeOsd
     /// <summary>The whole window content, background included (for self-test captures).</summary>
     public FrameworkElement Root => surface;
 
+    /// <summary>Window content height against the height the OSD asked for, in DIPs (self-test).</summary>
+    public (double Window, double Content) Heights => (surface.ActualHeight, root.Height);
+
     public OsdView(AppHost host)
     {
         var iconButton = new Button
@@ -155,7 +158,7 @@ sealed class OsdView : IVolumeOsd
         var cursor = WindowHelpers.CursorPosition();
         var display = WindowHelpers.DisplayAt(cursor);
         double scale = WindowHelpers.ScaleAt(cursor);
-        appWindow.ResizeClient(new SizeInt32((int)Math.Ceiling(OsdWidth * scale), (int)Math.Ceiling(height * scale)));
+        WindowHelpers.SetClientSize(appWindow, new SizeInt32((int)Math.Ceiling(OsdWidth * scale), (int)Math.Ceiling(height * scale)));
         var size = appWindow.Size;
         var work = display.WorkArea;
         int margin = (int)Math.Round(EdgeMarginDip * scale);

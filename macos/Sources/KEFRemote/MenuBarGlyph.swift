@@ -17,13 +17,28 @@ enum MenuBarGlyph: CaseIterable {
     private static let center = CGPoint(x: 8, y: 8)
 
     private func makeImage() -> NSImage {
-        let glyph = self
-        let image = NSImage(size: Self.size, flipped: false) { _ in
-            guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            glyph.draw(in: context)
-            return true
+        Self.render(size: Self.size, template: true) { draw(in: $0) }
+    }
+
+    /// Draws right away into 1x and 2x bitmaps, rather than later at display time.
+    static func render(size: CGSize, template: Bool, _ draw: (CGContext) -> Void) -> NSImage {
+        let image = NSImage(size: size)
+        for scale: CGFloat in [1, 2] {
+            guard let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int((size.width * scale).rounded(.up)), pixelsHigh: Int((size.height * scale).rounded(.up)),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+            ), let context = NSGraphicsContext(bitmapImageRep: rep) else { continue }
+            rep.size = size
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            context.cgContext.scaleBy(x: scale, y: scale)
+            draw(context.cgContext)
+            NSGraphicsContext.restoreGraphicsState()
+            image.addRepresentation(rep)
         }
-        image.isTemplate = true
+        image.isTemplate = template
         return image
     }
 
@@ -102,14 +117,12 @@ extension MenuBarGlyph {
         let slot = max(NSAttributedString(string: "88", attributes: attributes).size().width, text.size().width)
         let gap: CGFloat = 4
         let glyphImage = glyph.image
-        let image = NSImage(size: CGSize(width: ceil(size.width + gap + slot), height: size.height), flipped: false) { _ in
+        let image = render(size: CGSize(width: ceil(size.width + gap + slot), height: size.height), template: true) { _ in
             glyphImage.draw(in: CGRect(origin: .zero, size: size))
             // Digits centered on the glyph by cap height; draw(at:) takes the bottom of the line, below the baseline.
             let baseline = ((size.height - font.capHeight) / 2).rounded()
             text.draw(at: CGPoint(x: size.width + gap, y: baseline + font.descender))
-            return true
         }
-        image.isTemplate = true
         labels[key] = image
         return image
     }

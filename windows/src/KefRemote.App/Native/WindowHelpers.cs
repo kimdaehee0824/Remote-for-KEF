@@ -48,6 +48,18 @@ static class WindowHelpers
             Win32.SWP_NOMOVE | Win32.SWP_NOSIZE | Win32.SWP_NOACTIVATE | Win32.SWP_FRAMECHANGED);
     }
 
+    /// <summary>
+    /// Sizes the window so its client area is <paramref name="client"/> pixels. AppWindow.ResizeClient still adds a
+    /// caption's height after SetBorderAndTitleBar(true, false) removed it, which leaves an empty band in the popup,
+    /// so the frame is taken from the window's current outer and client sizes instead.
+    /// </summary>
+    public static void SetClientSize(AppWindow appWindow, SizeInt32 client)
+    {
+        SizeInt32 outer = appWindow.Size, inner = appWindow.ClientSize;
+        int frameWidth = Math.Max(0, outer.Width - inner.Width), frameHeight = Math.Max(0, outer.Height - inner.Height);
+        appWindow.Resize(new SizeInt32(client.Width + frameWidth, client.Height + frameHeight));
+    }
+
     public static DisplayArea DisplayAt(PointInt32 point) => DisplayArea.GetFromPoint(point, DisplayAreaFallback.Nearest);
 
     public static TaskbarEdge EdgeOf(DisplayArea display)

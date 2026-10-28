@@ -84,6 +84,13 @@ static class SelfTest
             host.ShowFlyout();
             await Capture(host.Flyout.Root, "02-flyout-on.png");
         });
+        // The popup windows are sized to their content, with no empty band below it.
+        await Step("flyout fits its content", async () =>
+        {
+            await Task.Delay(300);
+            var (window, content) = host.Flyout.Heights;
+            Expect(Math.Abs(window - content) <= 2, $"flyout window {window:0.#} tall for content {content:0.#}");
+        });
         await Step("volume within limit", async () =>
         {
             await WaitFor(() => !c.Busy, "idle");
@@ -123,6 +130,8 @@ static class SelfTest
             host.VolumeKeys.Handle(HotkeyAction.VolumeUp);
             await Task.Delay(300);
             await Capture(host.Osd.Root, "06-osd-limit.png");
+            var (window, content) = host.Osd.Heights;
+            Expect(Math.Abs(window - content) <= 2, $"OSD window {window:0.#} tall for content {content:0.#}");
         });
         await Step("notice", async () =>
         {

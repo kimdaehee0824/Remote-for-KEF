@@ -3,6 +3,7 @@ import KefRemoteCore
 import KefW2Driver
 import Observation
 import ServiceManagement
+import SwiftUI
 
 enum SettingsTab: Hashable {
     case general

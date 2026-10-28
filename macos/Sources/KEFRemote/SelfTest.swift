@@ -173,11 +173,11 @@ enum SelfTest {
             CGRect(x: 0, y: y, width: width, height: rowHeight).fill()
             var x = gap
             for item in items {
-                let tinted = NSImage(size: item.size, flipped: false) { rect in
+                let tinted = MenuBarGlyph.render(size: item.size, template: false) { _ in
+                    let rect = CGRect(origin: .zero, size: item.size)
                     item.draw(in: rect)
                     ink.set()
                     rect.fill(using: .sourceAtop)
-                    return true
                 }
                 tinted.draw(in: CGRect(x: x, y: y + (rowHeight - item.size.height) / 2, width: item.size.width, height: item.size.height))
                 x += item.size.width + gap

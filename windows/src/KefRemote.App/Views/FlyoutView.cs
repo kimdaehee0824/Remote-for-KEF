@@ -24,7 +24,7 @@ namespace KefRemote.App.Views;
 /// </summary>
 sealed class FlyoutView
 {
-    const double FlyoutWidth = 360;
+    const double FlyoutWidth = 360, MinHeight = 120;
     const int EdgeMarginDip = 12;
     const long ReopenGuardMs = 350, UserVolumeHoldMs = 900, NoticeLifetimeMs = 12000;
 
@@ -33,6 +33,7 @@ sealed class FlyoutView
     readonly AppWindow appWindow;
     readonly IntPtr hwnd;
     readonly StackPanel root;
+    readonly Grid surface;
 
     readonly Border appIcon;
     readonly TextBlock title = new() { FontSize = 15, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -96,6 +97,9 @@ sealed class FlyoutView
 
     /// <summary>The window content, for self-test captures.</summary>
     public FrameworkElement Root => root;
+
+    /// <summary>Window content height against the content's own height, in DIPs (self-test).</summary>
+    public (double Window, double Content) Heights => (surface.ActualHeight, Math.Max(root.DesiredSize.Height, MinHeight));
 
     sealed record SourceTile(string Id, Grid Container, ToggleButton Button, FontIcon Icon, ProgressRing Ring, Border LastInputRing);
 
@@ -183,7 +187,7 @@ sealed class FlyoutView
         root = new StackPanel { Width = FlyoutWidth, Children = { header, body, footer } };
         root.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), true);
 
-        var surface = new Grid { Children = { root } };
+        surface = new Grid { Children = { root } };
         bool acrylic = !host.SelfTest && DesktopAcrylicController.IsSupported();
         if (!acrylic) surface.Style = Ui.Style("KefSolidSurface");
 
@@ -307,11 +311,11 @@ sealed class FlyoutView
         double scale = root.XamlRoot?.RasterizationScale ?? WindowHelpers.ScaleAt(anchor);
         if (scale <= 0) scale = 1;
         root.Measure(new Size(FlyoutWidth, double.PositiveInfinity));
-        double height = Math.Max(root.DesiredSize.Height, 120);
+        double height = Math.Max(root.DesiredSize.Height, MinHeight);
         var client = new SizeInt32((int)Math.Ceiling(FlyoutWidth * scale), (int)Math.Ceiling(height * scale));
         if (!force && client.Equals(lastClientSize)) return;
         lastClientSize = client;
-        appWindow.ResizeClient(client);
+        WindowHelpers.SetClientSize(appWindow, client);
         var display = WindowHelpers.DisplayAt(anchor);
         appWindow.Move(WindowHelpers.PlaceNearTaskbar(display, anchor, appWindow.Size, (int)Math.Round(EdgeMarginDip * scale)));
     }
