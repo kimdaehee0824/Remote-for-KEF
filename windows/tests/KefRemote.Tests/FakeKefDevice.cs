@@ -7,7 +7,7 @@ using KefRemote.Drivers.Kef;
 namespace KefRemote.Tests;
 
 /// <summary>
-/// In-memory KEF W2 speaker answering getData/setData like the LSX II LT measured in the handoff.
+/// In-memory KEF W2 speaker answering getData/setData like the LSX II LT measured on real hardware (see docs/protocol/kef-w2.md).
 /// Verifies the HMAC header and decrypts protected values with the configured password.
 /// </summary>
 sealed class FakeKefDevice

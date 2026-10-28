@@ -1,6 +1,8 @@
 # Remote for KEF
 
-Unofficial desktop remote for KEF wireless speakers, built so other network players can be added. Windows first, macOS next.
+**A Very Revolutionary Way to Control Your KEF Speakers.**
+
+Unofficial desktop remote for KEF wireless speakers on Windows and macOS, built so other network players can be added.
 
 [한국어](README.ko.md)
 
@@ -22,7 +24,7 @@ It deliberately does **not** sync with the Windows master volume. The speaker's 
 - Never writes anything on startup or reconnect. Nothing is replayed after a network drop
 - Windows: global hotkeys for volume up/down and mute (default Ctrl+Alt+↑/↓/M, changeable in settings). Holding a key keeps stepping; only the latest target is sent. A volume flyout appears in the bottom-right corner, follows the light/dark theme and accent color, and also takes the mouse wheel
 
-Planned (in progress): menu bar volume slider (macOS).
+- macOS: menu bar panel with a volume slider, mute and input list. See [macos/README.md](macos/README.md)
 
 ## Supported players
 

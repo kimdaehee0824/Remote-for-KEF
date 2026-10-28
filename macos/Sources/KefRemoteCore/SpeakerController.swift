@@ -1,7 +1,7 @@
 import Observation
 
 /// Serializes every read and write to one speaker and owns the safety rules
-/// from the handoff document:
+/// from docs/drivers.md:
 /// - Connecting, reconnecting and polling only read. Nothing is written
 ///   unless the user asked for it.
 /// - Every write is preceded by a fresh read and followed by read-back

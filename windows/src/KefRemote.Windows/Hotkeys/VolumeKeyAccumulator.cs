@@ -23,7 +23,7 @@ public enum PressOutcome
 /// Folds rapid or held volume presses into one target and decides when to send it.
 /// Pure logic with an injected clock (milliseconds) so it can be tested without timers or a speaker.
 ///
-/// Rules, following the handoff's safety policy:
+/// Rules, following the safety policy in docs/drivers.md:
 ///  - The first press of a burst starts from the last verified volume, never from a stale preview.
 ///  - Up never goes past the effective cap; a volume already above the cap is not raised but may be lowered.
 ///  - Only one write is in flight. Presses during it keep moving the target, and only the newest target is sent next.
