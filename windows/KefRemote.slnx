@@ -2,7 +2,8 @@
   <Folder Name="/src/">
     <Project Path="src/KefRemote.Core/KefRemote.Core.csproj" />
     <Project Path="src/KefRemote.Drivers/KefRemote.Drivers.csproj" />
-    <Project Path="src/KefRemote.Windows/KefRemote.Windows.csproj" />
+    <Project Path="src/KefRemote.Desktop/KefRemote.Desktop.csproj" />
+    <Project Path="src/KefRemote.App/KefRemote.App.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/KefRemote.Tests/KefRemote.Tests.csproj" />

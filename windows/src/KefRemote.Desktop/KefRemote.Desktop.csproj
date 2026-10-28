@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- App logic shared by the desktop front ends and tested on every OS: settings model, shortcuts, volume key handling, display text. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\KefRemote.Core\KefRemote.Core.csproj" />
+  </ItemGroup>
+</Project>

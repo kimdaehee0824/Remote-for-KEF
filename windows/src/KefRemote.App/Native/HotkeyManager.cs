@@ -1,7 +1,6 @@
-using System.ComponentModel;
-using System.Runtime.InteropServices;
+using KefRemote.Desktop;
 
-namespace KefRemote.Windows;
+namespace KefRemote.App.Native;
 
 public enum HotkeyRegistration
 {
@@ -12,14 +11,13 @@ public enum HotkeyRegistration
 }
 
 /// <summary>
-/// Registers global shortcuts on a hidden message-only window so they work while the app lives only in the tray.
+/// Registers global shortcuts on the hidden message window so they work while the app lives only in the tray.
 /// Create, use and dispose it on the UI thread.
 /// </summary>
-public sealed class HotkeyManager : IDisposable
+sealed class HotkeyManager : IDisposable
 {
-    const int WM_HOTKEY = 0x0312;
     const uint MOD_NOREPEAT = 0x4000;
-    const int FirstId = 0x4B45; // arbitrary, stays inside the 0x0000–0xBFFF application range
+    const int FirstId = 0x4B45; // arbitrary, inside the 0x0000–0xBFFF application range
 
     readonly MessageWindow window;
     readonly Dictionary<int, HotkeyAction> registered = [];
@@ -30,15 +28,21 @@ public sealed class HotkeyManager : IDisposable
     /// <summary>Raised on the UI thread. Volume actions repeat while the key is held.</summary>
     public event Action<HotkeyAction>? Pressed;
 
+    /// <summary>Raised after registrations change, so settings can show conflicts per key.</summary>
+    public event Action? StatusChanged;
+
     public IReadOnlyDictionary<HotkeyAction, HotkeyRegistration> Status { get; private set; } =
         new Dictionary<HotkeyAction, HotkeyRegistration>();
 
-    public HotkeyManager()
+    public bool AnyInUse => Status.Values.Any(s => s == HotkeyRegistration.InUse);
+
+    public HotkeyManager(MessageWindow window)
     {
-        window = new MessageWindow(this);
+        this.window = window;
+        window.Hotkey += OnHotkey;
     }
 
-    /// <summary>Replaces every registration. Returns the outcome per action so the UI can show conflicts.</summary>
+    /// <summary>Replaces every registration and reports the outcome per action.</summary>
     public IReadOnlyDictionary<HotkeyAction, HotkeyRegistration> Apply(IEnumerable<HotkeyBinding> next)
     {
         bindings = next.Select(b => b.Clone()).ToList();
@@ -46,8 +50,8 @@ public sealed class HotkeyManager : IDisposable
     }
 
     /// <summary>
-    /// Releases every chord, e.g. while the settings dialog is capturing a new one. Otherwise pressing the
-    /// current chord would trigger the action instead of reaching the capture box.
+    /// Releases every chord while the settings window captures a new one. Otherwise pressing the current chord
+    /// would run the action instead of reaching the capture box.
     /// </summary>
     public void Suspend()
     {
@@ -76,10 +80,10 @@ public sealed class HotkeyManager : IDisposable
                 status[binding.Action] = HotkeyRegistration.Off;
                 continue;
             }
-            // Holding volume keys should keep stepping like the Windows volume keys; mute should not flicker.
+            // Holding a volume key keeps stepping like the Windows volume keys; mute must not flicker.
             uint modifiers = (uint)binding.Modifiers;
             if (binding.Action == HotkeyAction.ToggleMute) modifiers |= MOD_NOREPEAT;
-            if (RegisterHotKey(window.Handle, id, modifiers, (uint)binding.Key))
+            if (Win32.RegisterHotKey(window.Handle, id, modifiers, (uint)binding.Key))
             {
                 registered[id] = binding.Action;
                 status[binding.Action] = HotkeyRegistration.Registered;
@@ -87,16 +91,18 @@ public sealed class HotkeyManager : IDisposable
             else
             {
                 status[binding.Action] = HotkeyRegistration.InUse;
+                Log.Write($"hotkey {binding} for {binding.Action} is taken by another app");
             }
             id++;
         }
         Status = status;
+        StatusChanged?.Invoke();
         return status;
     }
 
     void UnregisterAll()
     {
-        foreach (var id in registered.Keys) UnregisterHotKey(window.Handle, id);
+        foreach (var id in registered.Keys) Win32.UnregisterHotKey(window.Handle, id);
         registered.Clear();
     }
 
@@ -109,36 +115,7 @@ public sealed class HotkeyManager : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        window.Hotkey -= OnHotkey;
         UnregisterAll();
-        window.DestroyHandle();
     }
-
-    sealed class MessageWindow : NativeWindow
-    {
-        static readonly IntPtr HWND_MESSAGE = new(-3);
-        readonly HotkeyManager owner;
-
-        public MessageWindow(HotkeyManager owner)
-        {
-            this.owner = owner;
-            CreateHandle(new CreateParams { Parent = HWND_MESSAGE, Caption = "KefRemote.Hotkeys" });
-            if (Handle == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
-        }
-
-        protected override void WndProc(ref Message m)
-        {
-            if (m.Msg == WM_HOTKEY)
-            {
-                owner.OnHotkey(m.WParam.ToInt32());
-                return;
-            }
-            base.WndProc(ref m);
-        }
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 }

@@ -1,9 +1,9 @@
 using Microsoft.Win32;
 
-namespace KefRemote.Windows;
+namespace KefRemote.App;
 
-/// <summary>Per-user login start through HKCU\...\Run. Starts after sign-in, tray only.</summary>
-public static class StartupManager
+/// <summary>Per-user start after sign-in through HKCU\...\Run. Starts in the tray only.</summary>
+static class StartupManager
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     const string ValueName = "RemoteForKEF";

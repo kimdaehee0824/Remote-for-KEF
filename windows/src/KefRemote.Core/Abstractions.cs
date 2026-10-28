@@ -75,8 +75,20 @@ public interface ISpeakerDriver : IDisposable
     Task SetVolumeAsync(int volume, CancellationToken cancellationToken = default);
     Task SetMuteAsync(bool muted, CancellationToken cancellationToken = default);
     Task SetSourceAsync(string sourceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Standby (<paramref name="on"/> false) or wake to the input that was active before standby.
+    /// Only called when <see cref="DriverCapabilities.Power"/> is present.
+    /// </summary>
     Task SetPowerAsync(bool on, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+
+    /// <summary>
+    /// For devices whose output level depends on the direction a volume is reached from: a slightly higher value
+    /// to write for a moment before raising <paramref name="current"/> to <paramref name="target"/>, or null when
+    /// the target can be written directly. The controller caps it at the volume limit and only verifies the target.
+    /// </summary>
+    int? ApproachOvershoot(int current, int target) => null;
 }
 
 public sealed record DriverDescriptor(

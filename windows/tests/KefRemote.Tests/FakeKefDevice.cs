@@ -18,6 +18,7 @@ sealed class FakeKefDevice
     public int Volume = 32, MaximumVolume = 70;
     public bool Muted, VolumeLimit = true, ReturnLoginPage;
     public int Posts;
+    string lastSource = "usb";
     readonly string password;
 
     public StubHandler Handler { get; }
@@ -69,7 +70,13 @@ sealed class FakeKefDevice
         {
             case KefW2Driver.VolumePath: Volume = value[type]!.GetValue<int>(); break;
             case KefW2Driver.MutePath: Muted = value[type]!.GetValue<bool>(); break;
-            case KefW2Driver.SourcePath: Source = value[type]!.GetValue<string>(); break;
+            case KefW2Driver.SourcePath:
+                // W2 firmware: "standby" and "powerOn" written to the input setting switch power.
+                string next = value[type]!.GetValue<string>();
+                if (next == "standby") { lastSource = Source; Source = "standby"; Power = "standby"; }
+                else if (next == "powerOn") { Source = lastSource; Power = "powerOn"; }
+                else { Source = next; Power = "powerOn"; }
+                break;
             default: return StubHandler.Ok("""{"error":{"message":"read only"}}""");
         }
         return StubHandler.Ok("");

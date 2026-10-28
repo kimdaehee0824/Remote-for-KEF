@@ -1,6 +1,16 @@
 using System.Diagnostics;
 
-namespace KefRemote.Windows;
+namespace KefRemote.Desktop;
+
+/// <param name="Volume">Level to draw, or null when the speaker state is unknown.</param>
+/// <param name="Pending">True while the level is a preview that the speaker has not confirmed yet.</param>
+public sealed record OsdContent(int? Volume, bool Muted, int Limit, bool Pending, string? Message, bool IsError);
+
+/// <summary>The on-screen volume display. Implemented by each front end.</summary>
+public interface IVolumeOsd
+{
+    void ShowLevel(OsdContent content);
+}
 
 /// <summary>
 /// Turns hotkey (and OSD wheel/click) input into speaker writes and keeps the OSD in step.
@@ -15,33 +25,35 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
     readonly Func<bool> controllerBusy;
     readonly Func<int, Task> setVolumeTarget;
     readonly Func<bool, Task> setMute;
-    readonly VolumeOsdForm osd;
+    readonly IVolumeOsd osd;
+    readonly Action<int, Action> runLater;
     readonly VolumeKeyAccumulator accumulator = new();
-    readonly System.Windows.Forms.Timer sendTimer = new();
     readonly Stopwatch clock = Stopwatch.StartNew();
+    int timerGeneration;
     bool muteInFlight;
+    bool disposed;
 
     /// <param name="snapshot">Latest verified speaker state from the controller.</param>
-    /// <param name="setVolumeTarget">Writes one absolute volume and completes after the controller verified it (e.g. SpeakerController.SetVolumeTarget).</param>
+    /// <param name="setVolumeTarget">Writes one absolute volume and completes after the controller verified it (e.g. SpeakerController.SetVolumeTargetAsync).</param>
     /// <param name="setMute">Writes mute on/off and completes after verification.</param>
     /// <param name="controllerBusy">True while the controller runs a poll or another command and would drop a mute command.</param>
+    /// <param name="runLater">Runs the callback on the UI thread after the given milliseconds.</param>
     public HotkeyVolumeCoordinator(Func<VolumeSnapshot> snapshot, Func<int, Task> setVolumeTarget, Func<bool, Task> setMute,
-        Func<bool> controllerBusy, VolumeOsdForm osd)
+        Func<bool> controllerBusy, IVolumeOsd osd, Action<int, Action> runLater)
     {
         this.snapshot = snapshot;
         this.controllerBusy = controllerBusy;
         this.setVolumeTarget = setVolumeTarget;
         this.setMute = setMute;
         this.osd = osd;
-        sendTimer.Tick += (_, _) => { sendTimer.Stop(); Pump(); };
-        osd.WheelStep += direction => Handle(direction > 0 ? HotkeyAction.VolumeUp : HotkeyAction.VolumeDown);
-        osd.MuteClicked += () => Handle(HotkeyAction.ToggleMute);
+        this.runLater = runLater;
     }
 
+    /// <summary>1–10 volume units per press, or <see cref="VolumeSteps.Perceptual"/>.</summary>
     public int Step
     {
         get => accumulator.Step;
-        set => accumulator.Step = Math.Clamp(value, 1, 10);
+        set => accumulator.Step = value == VolumeSteps.Perceptual ? value : Math.Clamp(value, 1, 10);
     }
 
     public int Tolerance
@@ -50,10 +62,12 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         set => accumulator.Tolerance = Math.Max(0, value);
     }
 
+    /// <summary>When false, only problems are shown, not every change.</summary>
     public bool OsdEnabled { get; set; } = true;
 
     public void Handle(HotkeyAction action)
     {
+        if (disposed) return;
         switch (action)
         {
             case HotkeyAction.VolumeUp: Nudge(+1); break;
@@ -69,7 +83,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         switch (outcome)
         {
             case PressOutcome.NotReady:
-                Show(state, message: state.Status ?? "스피커 연결을 확인하는 중입니다");
+                Show(state, message: state.Status ?? "스피커 연결을 확인하는 중입니다", error: true);
                 return;
             case PressOutcome.Moved:
                 Show(state, volume: accumulator.Target, pending: true);
@@ -78,7 +92,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
                 Show(state, volume: accumulator.Target, pending: accumulator.HasUnsent || accumulator.InFlight,
                     message: (accumulator.Target ?? state.Volume) > state.Limit
                         ? $"현재 음량이 상한 {state.Limit}보다 높습니다"
-                        : $"앱 음량 상한 {state.Limit}");
+                        : $"상한 {state.Limit}에 닿았습니다");
                 break;
             case PressOutcome.AtFloor:
                 Show(state, volume: accumulator.Target, pending: accumulator.HasUnsent || accumulator.InFlight);
@@ -95,6 +109,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
 
     void Pump()
     {
+        if (disposed) return;
         long now = clock.ElapsedMilliseconds;
         var due = accumulator.TakeDue(now);
         if (due is int target)
@@ -104,8 +119,11 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         }
         if (accumulator.DelayUntilDue(now) is long delay)
         {
-            sendTimer.Interval = (int)Math.Max(1, delay);
-            sendTimer.Start();
+            int scheduled = ++timerGeneration;
+            runLater((int)Math.Max(1, delay), () =>
+            {
+                if (scheduled == timerGeneration) Pump();
+            });
         }
     }
 
@@ -138,8 +156,8 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         }
         if (Math.Abs(verified.Volume - target) > Tolerance)
         {
-            // Not applied (cap, input changed elsewhere, ...). The controller's status says why.
-            Show(verified, message: verified.Status ?? $"스피커가 {verified.Volume}(으)로 응답했습니다");
+            // Not applied (cap, input changed elsewhere, ...). The controller's notice says why.
+            Show(verified, message: verified.Status ?? $"스피커가 {verified.Volume}{Korean.Ro(verified.Volume.ToString())} 응답했습니다");
             return;
         }
         Show(verified);
@@ -151,7 +169,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         var state = snapshot();
         if (!state.Ready)
         {
-            Show(state, message: state.Status ?? "스피커 연결을 확인하는 중입니다");
+            Show(state, message: state.Status ?? "스피커 연결을 확인하는 중입니다", error: true);
             return;
         }
         if (muteInFlight || accumulator.InFlight) return;
@@ -180,7 +198,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
             await setMute(muted);
             var verified = snapshot();
             if (verified.Ready && verified.Muted == muted) Show(verified);
-            else Show(verified, message: verified.Status ?? "음소거 상태를 확인하지 못했습니다", error: !verified.Ready);
+            else Show(verified, message: verified.Status ?? "음소거 상태를 확인하지 못했습니다", error: true);
         }
         catch (Exception e)
         {
@@ -194,7 +212,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
 
     void Show(VolumeSnapshot state, int? volume = null, bool pending = false, string? message = null, bool error = false)
     {
-        if (!OsdEnabled) return;
+        if (disposed || (!OsdEnabled && !error)) return;
         osd.ShowLevel(new OsdContent(
             Volume: state.Ready || volume != null ? volume ?? state.Volume : null,
             Muted: state.Muted,
@@ -206,6 +224,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
 
     public void Dispose()
     {
-        sendTimer.Dispose();
+        disposed = true;
+        timerGeneration++;
     }
 }

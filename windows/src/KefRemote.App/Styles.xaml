@@ -1,0 +1,109 @@
+<!--
+  Styles the C# views apply by key. They live in XAML only because {ThemeResource} keeps brushes in step with
+  light, dark and high contrast at runtime. Loaded once at startup with XamlReader (see App.cs), never compiled.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="KefLimitBrush" Color="#B35F00" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="KefLimitBrush" Color="#FFB35C" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="HighContrast">
+      <SolidColorBrush x:Key="KefLimitBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <Style x:Key="KefSecondaryText" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <Style x:Key="KefTertiaryText" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style x:Key="KefLimitText" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{ThemeResource KefLimitBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style x:Key="KefCriticalText" TargetType="TextBlock">
+    <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style x:Key="KefLimitTick" TargetType="Rectangle">
+    <Setter Property="Fill" Value="{ThemeResource KefLimitBrush}" />
+  </Style>
+
+  <!-- Windows 11 Settings row. -->
+  <Style x:Key="KefCard" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="16,12" />
+    <Setter Property="MinHeight" Value="64" />
+  </Style>
+
+  <!-- Bottom strip of the tray flyout, like the one under Quick Settings. -->
+  <Style x:Key="KefFooter" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="0,1,0,0" />
+  </Style>
+
+  <Style x:Key="KefKeycap" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="1,1,1,2" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Padding" Value="6,1,6,2" />
+  </Style>
+
+  <Style x:Key="KefAppIconTile" TargetType="Border">
+    <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+    <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="8" />
+  </Style>
+
+  <!-- Marks the input the speaker will wake up on. -->
+  <Style x:Key="KefLastInputRing" TargetType="Border">
+    <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+
+  <!-- Progress on an accent-filled (selected) input tile. -->
+  <Style x:Key="KefOnAccentRing" TargetType="ProgressRing">
+    <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+  </Style>
+
+  <Style x:Key="KefDotSuccess" TargetType="Ellipse">
+    <Setter Property="Fill" Value="{ThemeResource SystemFillColorSuccessBrush}" />
+  </Style>
+  <Style x:Key="KefDotCaution" TargetType="Ellipse">
+    <Setter Property="Fill" Value="{ThemeResource SystemFillColorCautionBrush}" />
+  </Style>
+  <Style x:Key="KefDotCritical" TargetType="Ellipse">
+    <Setter Property="Fill" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+  </Style>
+  <Style x:Key="KefDotNeutral" TargetType="Ellipse">
+    <Setter Property="Fill" Value="{ThemeResource SystemFillColorNeutralBrush}" />
+  </Style>
+
+  <!-- Solid fallback behind the OSD and flyout when acrylic is unavailable (or for self-test captures). -->
+  <Style x:Key="KefSolidSurface" TargetType="Grid">
+    <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+  </Style>
+</ResourceDictionary>

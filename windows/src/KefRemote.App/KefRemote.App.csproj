@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    WinUI 3 tray app. Unpackaged and self-contained so the published folder runs as is:
+    no installer, no MSIX signing, no separate .NET or Windows App SDK runtime.
+    The UI is built in C# with WinUI controls instead of XAML pages. The XAML compiler only runs on Windows,
+    while plain C# can be compiled (and checked) on any OS: dotnet msbuild -t:Compile -p:Platform=x64
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <RootNamespace>KefRemote.App</RootNamespace>
+    <AssemblyName>RemoteForKEF</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <!-- Program.cs owns Main for the single-instance check and the background start. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <!-- Generated XAML and Windows App SDK targets can raise warnings outside this code; keep them visible but not fatal. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\KefRemote.Core\KefRemote.Core.csproj" />
+    <ProjectReference Include="..\KefRemote.Drivers\KefRemote.Drivers.csproj" />
+    <ProjectReference Include="..\KefRemote.Desktop\KefRemote.Desktop.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\**\*.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Styles that need {ThemeResource}, loaded with XamlReader at startup (not compiled). -->
+    <Page Remove="Styles.xaml" />
+    <EmbeddedResource Include="Styles.xaml" LogicalName="KefRemote.App.Styles.xaml" />
+  </ItemGroup>
+</Project>
