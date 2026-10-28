@@ -16,11 +16,15 @@ sealed class TrayApplicationContext : ApplicationContext
     readonly EventWaitHandle showEvent = new(false, EventResetMode.AutoReset, Program.ShowEventName);
     readonly RegisteredWaitHandle showWait;
     readonly SynchronizationContext ui;
+    readonly HotkeyManager hotkeys = new();
+    readonly VolumeOsdForm osd = new();
+    readonly HotkeyVolumeCoordinator volumeKeys;
     MainForm? form;
     bool connecting;
 
     public AppSettings Settings { get; }
     public SpeakerController Controller => controller;
+    public HotkeyManager Hotkeys => hotkeys;
 
     public TrayApplicationContext(bool showWindow)
     {
@@ -35,6 +39,20 @@ sealed class TrayApplicationContext : ApplicationContext
         tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowWindow(); };
         menu.Opening += (_, _) => BuildMenu();
         tray.Visible = true;
+
+        volumeKeys = new HotkeyVolumeCoordinator(
+            snapshot: () => new VolumeSnapshot(
+                Ready: controller.IsReady && controller.Supports(DriverCapabilities.Volume),
+                Volume: controller.State.Volume,
+                Muted: controller.State.Muted,
+                Limit: controller.EffectiveLimit,
+                Status: controller.Status),
+            setVolumeTarget: controller.SetVolumeTargetAsync,
+            setMute: controller.SetMuteAsync,
+            controllerBusy: () => controller.Busy,
+            osd: osd);
+        hotkeys.Pressed += volumeKeys.Handle;
+        ApplyHotkeySettings();
 
         showWait = ThreadPool.RegisterWaitForSingleObject(showEvent, (_, _) => ui.Post(_ => ShowWindow(), null), null, Timeout.Infinite, executeOnlyOnce: false);
 
@@ -92,6 +110,14 @@ sealed class TrayApplicationContext : ApplicationContext
         SettingsStore.Save(Settings);
     }
 
+    /// <summary>Registers the saved shortcuts and applies step/OSD preferences. Settings must already hold valid values.</summary>
+    public void ApplyHotkeySettings()
+    {
+        volumeKeys.Step = Settings.HotkeyVolumeStep;
+        volumeKeys.OsdEnabled = Settings.ShowVolumeOsd;
+        hotkeys.Apply(HotkeyBinding.Normalize(Settings.Hotkeys));
+    }
+
     async Task PollAsync()
     {
         pollTimer.Stop();
@@ -124,6 +150,7 @@ sealed class TrayApplicationContext : ApplicationContext
 
     void OnChanged()
     {
+        volumeKeys.Tolerance = controller.Driver?.VolumeTolerance ?? 0;
         var s = controller.State;
         string name = controller.Device?.Name ?? "Remote for KEF";
         string text = controller.Fresh
@@ -170,6 +197,9 @@ sealed class TrayApplicationContext : ApplicationContext
         showWait.Unregister(null);
         tray.Visible = false;
         form?.Close(force: true);
+        hotkeys.Dispose();
+        volumeKeys.Dispose();
+        osd.Dispose();
         controller.Dispose();
         base.ExitThreadCore();
     }

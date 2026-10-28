@@ -17,6 +17,9 @@ public sealed class AppSettings
     public int HotkeyVolumeStep { get; set; } = 1;
     public bool ShowVolumeOsd { get; set; } = true;
 
+    /// <summary>Global shortcuts. Empty means the defaults; an entry with Key 0 means that action is turned off.</summary>
+    public List<HotkeyBinding> Hotkeys { get; set; } = [];
+
     public string Password
     {
         get

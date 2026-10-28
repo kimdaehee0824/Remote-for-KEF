@@ -30,6 +30,7 @@ sealed class MainForm : Form
     readonly NumericUpDown limitBox = new() { Minimum = 1, Maximum = 100, Width = 64 };
     readonly CheckBox startupBox = new() { AutoSize = true, Text = "Windows 로그인 시 트레이로 조용히 실행" };
     readonly System.Windows.Forms.Timer sendTimer = new() { Interval = 200 };
+    readonly HotkeySettingsPanel hotkeyPanel;
 
     bool updatingFromDevice;
     bool dragging;
@@ -103,6 +104,11 @@ sealed class MainForm : Form
         prefs.Controls.Add(startupBox);
         root.Controls.Add(prefs);
 
+        var hotkeyGroup = new GroupBox { Text = "단축키", AutoSize = true, Dock = DockStyle.Fill, Padding = new Padding(8) };
+        hotkeyPanel = new HotkeySettingsPanel(app.Hotkeys) { Dock = DockStyle.Fill };
+        hotkeyGroup.Controls.Add(hotkeyPanel);
+        root.Controls.Add(hotkeyGroup);
+
         foreach (var d in BuiltInDrivers.All)
             driverBox.Items.Add(new DriverItem(d));
         driverBox.SelectedItem = driverBox.Items.Cast<DriverItem>().First(i => i.Descriptor == BuiltInDrivers.Find(app.Settings.DriverId));
@@ -119,6 +125,15 @@ sealed class MainForm : Form
         muteButton.Click += async (_, _) => await C.ToggleMuteAsync();
         limitBox.ValueChanged += (_, _) => { app.Settings.AppVolumeLimit = (int)limitBox.Value; app.SaveSettings(); };
         startupBox.CheckedChanged += (_, _) => SetStartup(startupBox.Checked);
+        hotkeyPanel.LoadSettings(app.Settings.Hotkeys, app.Settings.HotkeyVolumeStep, app.Settings.ShowVolumeOsd);
+        hotkeyPanel.Changed += () =>
+        {
+            app.Settings.Hotkeys = hotkeyPanel.Bindings.Select(b => b.Clone()).ToList();
+            app.Settings.HotkeyVolumeStep = hotkeyPanel.VolumeStep;
+            app.Settings.ShowVolumeOsd = hotkeyPanel.OsdEnabled;
+            app.SaveSettings();
+            app.ApplyHotkeySettings();
+        };
 
         slider.MouseDown += (_, _) => dragging = true;
         slider.MouseUp += (_, _) => { dragging = false; SendPending(); };

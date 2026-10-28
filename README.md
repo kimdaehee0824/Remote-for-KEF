@@ -20,8 +20,9 @@ It deliberately does **not** sync with the Windows master volume. The speaker's 
 - App volume limit (default 30). Raises are capped; lowering always works. The speaker's own limit is respected too
 - Tray app: closing the window keeps it running; optional quiet start after Windows sign-in
 - Never writes anything on startup or reconnect. Nothing is replayed after a network drop
+- Windows: global hotkeys for volume up/down and mute (default Ctrl+Alt+↑/↓/M, changeable in settings). Holding a key keeps stepping; only the latest target is sent. A volume flyout appears in the bottom-right corner, follows the light/dark theme and accent color, and also takes the mouse wheel
 
-Planned (in progress): global hotkeys with an on-screen volume indicator (Windows), menu bar volume slider (macOS).
+Planned (in progress): menu bar volume slider (macOS).
 
 ## Supported players
 

@@ -13,6 +13,11 @@
     <ProjectReference Include="..\..\src\KefRemote.Drivers\KefRemote.Drivers.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Platform-neutral hotkey logic from the Windows app, compiled in so it is tested on every OS. -->
+    <Compile Include="..\..\src\KefRemote.Windows\Hotkeys\HotkeyBinding.cs" Link="Windows\HotkeyBinding.cs" />
+    <Compile Include="..\..\src\KefRemote.Windows\Hotkeys\VolumeKeyAccumulator.cs" Link="Windows\VolumeKeyAccumulator.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="..\..\..\spec\test-vectors\*.json" Link="vectors\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
