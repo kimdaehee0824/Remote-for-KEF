@@ -26,7 +26,7 @@ sealed class OsdView : IVolumeOsd
 
     readonly Window window;
     readonly AppWindow appWindow;
-    readonly Grid root;
+    readonly Grid root, surface;
     readonly FontIcon icon = Ui.Icon(Glyphs.Volume2, 16);
     readonly Slider bar = new() { Minimum = 0, Maximum = 100, IsHitTestVisible = false, IsTabStop = false, IsThumbToolTipEnabled = false, VerticalAlignment = VerticalAlignment.Center };
     readonly Rectangle limitTick = new() { Width = 2, Height = 16, RadiusX = 1, RadiusY = 1, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
@@ -42,7 +42,8 @@ sealed class OsdView : IVolumeOsd
     /// <summary>Wheel and icon clicks, routed like hotkeys.</summary>
     public event Action<HotkeyAction>? Input;
 
-    public FrameworkElement Root => root;
+    /// <summary>The whole window content, background included (for self-test captures).</summary>
+    public FrameworkElement Root => surface;
 
     public OsdView(AppHost host)
     {
@@ -84,7 +85,7 @@ sealed class OsdView : IVolumeOsd
             e.Handled = true;
         };
 
-        var surface = new Grid { Children = { root } };
+        surface = new Grid { Children = { root } };
         bool acrylic = !host.SelfTest && AlwaysActiveAcrylic.IsSupported;
         if (!acrylic) surface.Style = Ui.Style("KefSolidSurface");
         window = new Window { Title = "Remote for KEF 음량", Content = surface };
@@ -131,7 +132,7 @@ sealed class OsdView : IVolumeOsd
         PlaceLimitTick();
 
         bool hasMessage = !string.IsNullOrEmpty(content.Message);
-        message.Text = content.Message ?? "";
+        message.Text = Korean.KeepWords(content.Message ?? "");
         message.Style = Ui.Style(content.IsError ? "KefCriticalText" : "KefSecondaryText");
         message.FontSize = 11.5;
         message.Visibility = hasMessage ? Visibility.Visible : Visibility.Collapsed;

@@ -97,7 +97,7 @@ sealed class FlyoutView
     /// <summary>The window content, for self-test captures.</summary>
     public FrameworkElement Root => root;
 
-    sealed record SourceTile(string Id, Grid Container, ToggleButton Button, ProgressRing Ring, Border LastInputRing);
+    sealed record SourceTile(string Id, Grid Container, ToggleButton Button, FontIcon Icon, ProgressRing Ring, Border LastInputRing);
 
     public FlyoutView(AppHost host)
     {
@@ -377,9 +377,9 @@ sealed class FlyoutView
             sourcesLabel.Text = standby ? "이 입력으로 켜기" : "입력";
             if (showTiles) RefreshTiles(standby, switchingTo);
             standbyNote.Visibility = Show(standby);
-            standbyNote.Text = canPower
+            standbyNote.Text = Korean.KeepWords(canPower
                 ? "테두리 친 타일이 마지막 입력입니다. 켜기 전에 음량이 상한 이하인지 확인합니다."
-                : "이 기기는 앱에서 켤 수 없습니다. 리모컨으로 켜 주세요.";
+                : "이 기기는 앱에서 켤 수 없습니다. 리모컨으로 켜 주세요.");
 
             RefreshFooter();
         }
@@ -397,7 +397,7 @@ sealed class FlyoutView
         {
             problem.Severity = InfoBarSeverity.Informational;
             problem.Title = "스피커를 연결하세요";
-            problem.Message = "설정에서 스피커의 IP 주소를 입력하면 여기서 바로 음량과 입력을 바꿀 수 있습니다.";
+            problem.Message = Korean.KeepWords("설정에서 스피커의 IP 주소를 입력하면 여기서 바로 음량과 입력을 바꿀 수 있습니다.");
             retryButton.Visibility = Visibility.Collapsed;
             problem.IsOpen = true;
         }
@@ -405,7 +405,7 @@ sealed class FlyoutView
         {
             problem.Severity = InfoBarSeverity.Error;
             problem.Title = "연결할 수 없습니다";
-            problem.Message = c.Status;
+            problem.Message = Korean.KeepWords(c.Status);
             retryButton.Visibility = Visibility.Collapsed;
             problem.IsOpen = true;
         }
@@ -413,7 +413,7 @@ sealed class FlyoutView
         {
             problem.Severity = InfoBarSeverity.Error;
             problem.Title = "스피커가 응답하지 않습니다";
-            problem.Message = Reason(c.Status) + "스피커 전원과 Wi-Fi 연결을 확인하세요. 자동으로 다시 시도합니다.";
+            problem.Message = Korean.KeepWords(Reason(c.Status) + "스피커 전원과 Wi-Fi 연결을 확인하세요. 자동으로 다시 시도합니다.");
             retryButton.Visibility = Visibility.Visible;
             retryButton.IsEnabled = !host.IsConnecting;
             problem.IsOpen = true;
@@ -440,7 +440,7 @@ sealed class FlyoutView
         bool show = c.Notice != null && c.Clock() - c.NoticeAt < NoticeLifetimeMs && c.Phase is SpeakerPhase.On or SpeakerPhase.Standby;
         if (show)
         {
-            notice.Message = c.Notice;
+            notice.Message = Korean.KeepWords(c.Notice!);
             notice.Severity = c.NoticeIsError ? InfoBarSeverity.Error
                 : c.Notice!.Contains("상한", StringComparison.Ordinal) ? InfoBarSeverity.Warning
                 : InfoBarSeverity.Informational;
@@ -499,8 +499,10 @@ sealed class FlyoutView
             bool current = !standby && c.State.SourceId == tile.Id;
             tile.Button.IsChecked = switchingTo != null ? target : current;
             tile.Button.IsEnabled = target || (!busyOp && pendingSource == null && (!standby || canPower));
+            // The pressed tile's icon turns into the progress ring while the switch runs.
             tile.Ring.IsActive = target && (busyOp || pendingSource != null);
             tile.Ring.Visibility = Show(tile.Ring.IsActive);
+            tile.Icon.Visibility = Show(!tile.Ring.IsActive);
             tile.LastInputRing.Visibility = Show(standby && switchingTo == null && c.LastActiveSource == tile.Id);
         }
     }
@@ -523,7 +525,18 @@ sealed class FlyoutView
             string label = SpeakerPresentation.ShortLabel(source.Label);
             var caption = new TextBlock { Text = label, FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Center };
             var icon = Ui.Icon(Glyphs.ForSource(source.Id), 16);
-            var content = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { icon, caption } };
+            var ring = new ProgressRing
+            {
+                Width = 16,
+                Height = 16,
+                MinWidth = 0,
+                MinHeight = 0,
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Style = Ui.Style("KefOnAccentRing"),
+            };
+            var glyph = new Grid { Height = 16, HorizontalAlignment = HorizontalAlignment.Center, Children = { icon, ring } };
+            var content = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Children = { glyph, caption } };
             var button = new ToggleButton
             {
                 Content = content,
@@ -538,25 +551,12 @@ sealed class FlyoutView
             string id = source.Id;
             button.Click += (_, _) => OnTileClicked(id);
 
-            var ring = new ProgressRing
-            {
-                Width = 14,
-                Height = 14,
-                MinWidth = 0,
-                MinHeight = 0,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 5, 5, 0),
-                IsHitTestVisible = false,
-                Visibility = Visibility.Collapsed,
-                Style = Ui.Style("KefOnAccentRing"),
-            };
             var lastInput = new Border { Style = Ui.Style("KefLastInputRing"), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-            var container = new Grid { Children = { button, lastInput, ring } };
+            var container = new Grid { Children = { button, lastInput } };
             Grid.SetColumn(container, i % columns);
             Grid.SetRow(container, i / columns);
             tiles.Children.Add(container);
-            tileList.Add(new SourceTile(id, container, button, ring, lastInput));
+            tileList.Add(new SourceTile(id, container, button, icon, ring, lastInput));
         }
     }
 

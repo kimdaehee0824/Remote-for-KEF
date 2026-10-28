@@ -34,7 +34,8 @@ public static class SpeakerPresentation
         switch (c.Operation)
         {
             case SpeakerOperation.Source when c.OperationSource != null:
-                return $"{SourceLabel(c, c.OperationSource)}(으)로 바꾸는 중";
+                string label = ShortLabel(SourceLabel(c, c.OperationSource));
+                return $"{label}{Korean.Ro(label)} 바꾸는 중";
             case SpeakerOperation.PowerOn:
                 return "켜는 중";
             case SpeakerOperation.PowerOff:

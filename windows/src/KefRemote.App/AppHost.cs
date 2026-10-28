@@ -69,6 +69,7 @@ sealed class AppHost : IDisposable
     {
         environment = env ?? HostEnvironment.Default();
         Log.Folder = environment.SettingsFolder;
+        Log.Write($"started {typeof(AppHost).Assembly.GetName().Version}{(environment.SelfTest ? " (self-test)" : "")}, Windows {Environment.OSVersion.Version}");
         store = new SettingsStore(environment.SettingsFolder);
         Settings = store.Load();
         queue = DispatcherQueue.GetForCurrentThread();
@@ -345,7 +346,7 @@ sealed class AppHost : IDisposable
         hotkeyWarningShown = true;
         var taken = HotkeyBindings.Where(b => Hotkeys.Status.GetValueOrDefault(b.Action) == HotkeyRegistration.InUse).Select(b => b.ToString());
         tray.ShowBalloon("단축키를 등록하지 못했습니다",
-            $"{string.Join(", ", taken)}을(를) 다른 앱이 쓰고 있습니다. 설정 > 단축키에서 다른 조합으로 바꿀 수 있습니다.");
+            $"다른 앱이 이미 쓰고 있습니다: {string.Join(", ", taken)}. 설정 > 단축키에서 다른 조합으로 바꿀 수 있습니다.");
     }
 
     void RunLater(int milliseconds, Action action)

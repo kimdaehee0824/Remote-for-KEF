@@ -85,8 +85,15 @@ public protocol SpeakerDriver: Sendable {
     func read() async throws -> SpeakerSnapshot
     func setVolume(_ volume: Int) async throws
     func setMute(_ muted: Bool) async throws
-    /// Also wakes a device from standby when `power` is supported.
     func setSource(_ sourceId: String) async throws
-    /// Only with `power`. Drivers that wake through `setSource` may reject `true`.
+    /// Only with `power`. `true` wakes the device on the input it had before standby.
     func setPower(_ on: Bool) async throws
+    /// A slightly higher value to pass through on the way up to `target`, for
+    /// devices whose level depends on the direction it was reached from. nil
+    /// writes `target` directly. The controller caps it at the volume limit.
+    func approachOvershoot(current: Int, target: Int) -> Int?
+}
+
+extension SpeakerDriver {
+    public func approachOvershoot(current: Int, target: Int) -> Int? { nil }
 }

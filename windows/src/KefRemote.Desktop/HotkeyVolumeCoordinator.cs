@@ -157,7 +157,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         if (Math.Abs(verified.Volume - target) > Tolerance)
         {
             // Not applied (cap, input changed elsewhere, ...). The controller's notice says why.
-            Show(verified, message: verified.Status ?? $"스피커가 {verified.Volume}(으)로 응답했습니다");
+            Show(verified, message: verified.Status ?? $"스피커가 {verified.Volume}{Korean.Ro(verified.Volume.ToString())} 응답했습니다");
             return;
         }
         Show(verified);

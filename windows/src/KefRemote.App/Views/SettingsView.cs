@@ -179,7 +179,7 @@ sealed class SettingsView
             Severity = InfoBarSeverity.Warning,
             IsClosable = false,
             Title = "앱 폴더를 먼저 옮겨 주세요",
-            Message = "다운로드 폴더나 임시 폴더에서 실행 중입니다. 이 폴더를 정리하면 시작 시 실행이 동작하지 않습니다. 앱 폴더를 다른 곳으로 옮긴 뒤 켜세요. 옮긴 뒤에는 이 설정을 다시 켜야 합니다.",
+            Message = Korean.KeepWords("다운로드 폴더나 임시 폴더에서 실행 중입니다. 이 폴더를 정리하면 시작 시 실행이 동작하지 않습니다. 앱 폴더를 다른 곳으로 옮긴 뒤 켜세요. 옮긴 뒤에는 이 설정을 다시 켜야 합니다."),
             IsOpen = !host.SelfTest && StartupManager.IsUnstableLocation,
         };
         unstable.Visibility = unstable.IsOpen ? Visibility.Visible : Visibility.Collapsed;
@@ -220,7 +220,7 @@ sealed class SettingsView
             }
             catch (SpeakerException e)
             {
-                inputError.Text = e.Message;
+                inputError.Text = Korean.KeepWords(e.Message);
                 inputError.Visibility = Visibility.Visible;
                 return;
             }
@@ -277,7 +277,7 @@ sealed class SettingsView
                     _ => ("KefDotCritical", c.Status),
                 };
             dot.Style = Ui.Style(style);
-            statusText.Text = text;
+            statusText.Text = Korean.KeepWords(text);
 
             var d = c.Device;
             string signature = d == null ? "" : $"{d.Name}|{d.Model}|{d.Firmware}|{d.DeviceVolumeLimit}";
@@ -433,7 +433,7 @@ sealed class SettingsView
             string? error = HotkeyBinding.ValidateSet(proposed);
             if (error != null)
             {
-                status.Text = error;
+                status.Text = Korean.KeepWords(error);
                 status.Style = Ui.Style("KefCriticalText");
                 return;
             }

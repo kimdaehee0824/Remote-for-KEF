@@ -187,13 +187,36 @@ struct KefW2DriverTests {
         #expect(await device.posts.isEmpty)
     }
 
-    @Test func standbyIsReported() async throws {
+    @Test func powerGoesThroughPhysicalSource() async throws {
         let device = FakeKefDevice()
         let driver = try makeDriver(device)
         let info = try await driver.connect()
-        #expect(!info.capabilities.contains(.power))
-        await #expect(throws: KefError.self) { try await driver.setPower(false) }
-        #expect(await device.posts.isEmpty)
+        #expect(info.capabilities.contains(.power))
+        try await driver.setPower(false)
+        try await driver.setPower(true)
+        #expect(await device.posts.map(\.path) == ["settings:/kef/play/physicalSource", "settings:/kef/play/physicalSource"])
+        #expect(await device.posts.map(\.plain) == [
+            #"{"type":"kefPhysicalSource","kefPhysicalSource":"standby"}"#,
+            #"{"type":"kefPhysicalSource","kefPhysicalSource":"powerOn"}"#,
+        ])
+    }
+
+    @Test func overshootTable() throws {
+        #expect(KefVolumeCurve.overshoot(for: 20) == 22)
+        #expect(KefVolumeCurve.overshoot(for: 12) == 17)
+        #expect(KefVolumeCurve.overshoot(for: 5) == nil)
+        #expect(KefVolumeCurve.overshoot(for: 40) == 41)
+        #expect(KefVolumeCurve.overshoot(for: 41) == nil)
+        #expect(KefVolumeCurve.overshoot(for: 80) == nil)
+        let driver = try makeDriver(FakeKefDevice())
+        #expect(driver.approachOvershoot(current: 10, target: 20) == 22)
+        #expect(driver.approachOvershoot(current: 25, target: 20) == nil)
+    }
+
+    @Test func standbyIsReported() async throws {
+        let device = FakeKefDevice()
+        let driver = try makeDriver(device)
+        _ = try await driver.connect()
         await device.set("settings:/kef/play/physicalSource", #"[{"type":"kefPhysicalSource","kefPhysicalSource":"standby"}]"#)
         await device.set("settings:/kef/host/speakerStatus", #"[{"type":"kefSpeakerStatus","kefSpeakerStatus":"standby"}]"#)
         let state = try await driver.read()

@@ -35,6 +35,31 @@ public class DesktopLogicTests
     [InlineData("Wi-Fi", "Wi-Fi")]
     public void ShortLabels(string label, string expected) => Assert.Equal(expected, SpeakerPresentation.ShortLabel(label));
 
+    [Theory]
+    [InlineData("Wi-Fi", "로")]
+    [InlineData("USB-C", "로")]
+    [InlineData("Optical", "로")]
+    [InlineData("TV (HDMI eARC)", "로")]
+    [InlineData("Line", "으로")]
+    [InlineData("거실", "로")]
+    [InlineData("책상 스피커", "로")]
+    [InlineData("서재방", "으로")]
+    [InlineData("20", "으로")]
+    [InlineData("23", "으로")]
+    [InlineData("25", "로")]
+    [InlineData("7", "로")]
+    public void KoreanParticle(string word, string expected) => Assert.Equal(expected, Korean.Ro(word));
+
+    [Fact]
+    public void KoreanWordsStayWhole()
+    {
+        const string wj = "\u2060";
+        Assert.Equal($"음{wj}소{wj}거 해{wj}제", Korean.KeepWords("음소거 해제"));
+        Assert.Equal($"Wi-Fi{wj}로", Korean.KeepWords("Wi-Fi로"));
+        Assert.Equal("Ctrl + Alt", Korean.KeepWords("Ctrl + Alt"));
+        Assert.Equal("", Korean.KeepWords(""));
+    }
+
     [Fact]
     public void VolumeKeysHint()
     {

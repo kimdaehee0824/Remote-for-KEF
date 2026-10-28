@@ -72,6 +72,22 @@ jobs:
       - run: swift test
       # Universal (Apple silicon + Intel) app bundle, ad hoc signed.
       - run: scripts/build-app.sh --universal
+      # Every panel state and settings tab against a simulated speaker: PNGs and report.txt, exit 0 only on pass.
+      - name: UI self-test
+        run: |
+          out="$RUNNER_TEMP/mac-self-test"
+          "build/Remote for KEF.app/Contents/MacOS/KEFRemote" --self-test "$out" &
+          pid=$!
+          status=0
+          for _ in $(seq 1 180); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then kill "$pid"; echo "self-test timed out"; status=1; else wait "$pid" || status=$?; fi
+          cat "$out/report.txt" || echo "no report"
+          exit "$status"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-self-test
+          path: ${{ runner.temp }}/mac-self-test
       - name: Zip app
         run: ditto -c -k --keepParent "build/Remote for KEF.app" "build/RemoteForKEF-macos.zip"
       - uses: actions/upload-artifact@v4

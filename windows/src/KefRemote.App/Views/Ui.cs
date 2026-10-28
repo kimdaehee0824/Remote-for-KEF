@@ -1,3 +1,4 @@
+using KefRemote.Desktop;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -49,7 +50,7 @@ static class Ui
 
     public static TextBlock Text(string text, double size = 14, FontWeight? weight = null, string? style = null)
     {
-        var block = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap };
+        var block = new TextBlock { Text = Korean.KeepWords(text), TextWrapping = TextWrapping.Wrap };
         if (style != null) block.Style = Style(style);
         block.FontSize = size;
         if (weight is FontWeight w) block.FontWeight = w;

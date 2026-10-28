@@ -19,10 +19,21 @@ public final class SpeakerController {
         case offline(String)
     }
 
+    /// What the command in progress is doing, for progress display.
+    public enum Activity: Equatable, Sendable {
+        case volume
+        case mute
+        case source(String)
+        /// Waking, then switching to the input if one was given.
+        case powerOn(String?)
+        case powerOff
+    }
+
     public private(set) var phase: Phase = .idle
     public private(set) var device: DeviceInfo?
     public private(set) var snapshot: SpeakerSnapshot?
     public private(set) var isBusy = false
+    public private(set) var activity: Activity?
     /// Target of the volume command being processed, for display while the
     /// speaker has not confirmed it yet.
     public private(set) var pendingVolume: Int?
@@ -35,12 +46,20 @@ public final class SpeakerController {
     public var appLimit: Int = VolumePolicy.defaultAppLimit
     /// Shorter polling while the menu panel is open.
     public var isPanelVisible = false
+    /// Raise through the driver's overshoot value so the level matches the one
+    /// reached from above (see `SpeakerDriver.approachOvershoot`).
+    public var approachFromAbove = false
 
     public var effectiveLimit: Int {
         VolumePolicy.effectiveLimit(appLimit: appLimit, deviceLimit: device?.deviceVolumeLimit)
     }
     public var isOnline: Bool { phase == .online }
     public var isAboveLimit: Bool { (snapshot?.volume ?? 0) > effectiveLimit }
+    /// True when the KEF device maximum, not the app limit, is what stops the volume.
+    public var limitFromDevice: Bool {
+        guard let deviceLimit = device?.deviceVolumeLimit else { return false }
+        return deviceLimit < VolumePolicy.clamp(appLimit)
+    }
 
     private enum Intent: Equatable {
         case volume(Int)
@@ -48,12 +67,22 @@ public final class SpeakerController {
         case toggleMute
         case source(String)
         case standby
-        case wake(String)
+        case wake(String?)
 
         var isVolume: Bool {
             switch self {
             case .volume, .volumeStep: true
             default: false
+            }
+        }
+
+        var activity: Activity {
+            switch self {
+            case .volume, .volumeStep: .volume
+            case .toggleMute: .mute
+            case let .source(id): .source(id)
+            case .standby: .powerOff
+            case let .wake(id): .powerOn(id)
             }
         }
     }
@@ -88,6 +117,8 @@ public final class SpeakerController {
     let verifyDelay: Duration = .milliseconds(180)
     let powerVerifyAttempts = 10
     let powerVerifyDelay: Duration = .milliseconds(500)
+    /// How long the overshoot value is held before the target is written.
+    let approachHold: Duration = .milliseconds(100)
 
     public init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.sleep = sleep
@@ -149,6 +180,15 @@ public final class SpeakerController {
             goOffline("연결 확인 필요: \(describe(error))")
             return false
         }
+    }
+
+    /// Reads the device information again, for the KEF maximum volume that can
+    /// change in KEF Connect at any time. Read-only; skipped while a command runs.
+    public func refreshDevice() async {
+        guard let driver, phase == .online, !isBusy else { return }
+        let token = generation
+        guard let info = try? await driver.connect(), token == generation else { return }
+        device = info
     }
 
     @discardableResult
@@ -218,7 +258,11 @@ public final class SpeakerController {
 
     public func standby() { enqueue(.standby) }
 
-    public func wake(to sourceId: String) { enqueue(.wake(sourceId)) }
+    /// Wakes from standby, then switches to `sourceId` (muted, like any input
+    /// switch) when it differs from the input the speaker woke up on.
+    public func wake(to sourceId: String? = nil) { enqueue(.wake(sourceId)) }
+
+    public func clearNotice() { notice = nil }
 
     private func enqueue(_ intent: Intent) {
         guard driver != nil, phase == .online, let snapshot else {
@@ -270,10 +314,12 @@ public final class SpeakerController {
         isBusy = true
         defer {
             isBusy = false
+            activity = nil
             pendingVolume = nil
         }
         while let job = queued {
             queued = nil
+            activity = job.intent.activity
             await execute(job)
         }
     }
@@ -309,23 +355,14 @@ public final class SpeakerController {
             case let .source(target):
                 try await switchSource(driver, job.token, before, to: target, limit: limit, device: device)
             case .standby:
-                guard device.capabilities.contains(.power) else { throw Stop(message: "이 기기는 전원 제어를 지원하지 않습니다") }
+                guard device.capabilities.contains(.power) else { throw Stop(message: "이 기기는 앱에서 전원을 끌 수 없습니다") }
                 try check(job.token)
                 try await driver.setPower(false)
-                _ = try await verify(driver, job.token, attempts: powerVerifyAttempts, delay: powerVerifyDelay) { $0.power == .standby }
+                _ = try await verify(driver, job.token, attempts: powerVerifyAttempts, delay: powerVerifyDelay, tolerateTransient: true) {
+                    $0.power == .standby
+                }
             case let .wake(target):
-                guard device.capabilities.contains(.power), device.sources.contains(where: { $0.id == target }) else {
-                    throw Stop(message: "켤 입력을 확인할 수 없습니다")
-                }
-                guard before.power != .on else { return }
-                guard before.volume <= limit else {
-                    throw Stop(message: "대기 전 음량(\(before.volume))이 상한(\(limit))보다 높아 켜지 않았습니다")
-                }
-                try check(job.token)
-                try await driver.setSource(target)
-                _ = try await verify(driver, job.token, attempts: powerVerifyAttempts, delay: powerVerifyDelay) {
-                    $0.power == .on && $0.sourceId == target
-                }
+                try await wake(driver, job.token, before, to: target, limit: limit, device: device)
             }
         } catch is Cancelled {
         } catch let stop as Stop {
@@ -341,12 +378,20 @@ public final class SpeakerController {
     ) async throws {
         guard device.capabilities.contains(.volume) else { throw Stop(message: "이 기기는 음량 제어를 지원하지 않습니다") }
         let target = VolumePolicy.target(requested: requested, current: before.volume, limit: limit)
-        if target != VolumePolicy.clamp(requested) {
-            notice = before.volume >= limit
-                ? "음량이 상한(\(limit)) 이상이라 더 올리지 않았습니다"
-                : "앱 상한 \(limit)까지만 올렸습니다"
+        if VolumePolicy.clamp(requested) > target {
+            notice = before.volume > limit ? "음량이 상한 \(limit)보다 높아 올리지 않았습니다" : "상한 \(limit)에 닿았습니다"
         }
         guard target != before.volume else { return }
+        if approachFromAbove, target > before.volume,
+           let overshoot = driver.approachOvershoot(current: before.volume, target: target) {
+            // A passing value: capped at the limit and never verified on its own.
+            let passing = min(overshoot, limit)
+            if passing > target {
+                try check(token)
+                try await driver.setVolume(passing)
+                try await sleep(approachHold)
+            }
+        }
         try check(token)
         try await driver.setVolume(target)
         _ = try await verify(driver, token) { abs($0.volume - target) <= device.volumeTolerance && $0.sourceId == before.sourceId }
@@ -374,7 +419,10 @@ public final class SpeakerController {
         try check(token)
         try await driver.setSource(target)
         let after = try await verify(driver, token) { $0.sourceId == target && $0.muted }
-        guard !wasMuted else { return }
+        guard !wasMuted else {
+            notice = "입력을 바꿨습니다. 원래 음소거 상태를 유지합니다"
+            return
+        }
         guard after.volume <= before.volume, after.volume <= limit else {
             notice = "새 입력의 음량(\(after.volume))이 더 높아 음소거를 유지했습니다"
             return
@@ -382,6 +430,37 @@ public final class SpeakerController {
         try check(token)
         try await driver.setMute(false)
         _ = try await verify(driver, token) { !$0.muted && $0.sourceId == target }
+    }
+
+    /// Refused while the volume read in standby is above the limit, because the
+    /// speaker wakes at that volume. Once on, the input switch is the usual
+    /// muted one and is skipped when the woken volume is above the limit.
+    private func wake(
+        _ driver: any SpeakerDriver, _ token: Int, _ before: SpeakerSnapshot,
+        to target: String?, limit: Int, device: DeviceInfo
+    ) async throws {
+        guard device.capabilities.contains(.power) else { throw Stop(message: "이 기기는 앱에서 전원을 켤 수 없습니다") }
+        if let target, !device.sources.contains(where: { $0.id == target }) {
+            throw Stop(message: "지원하지 않는 입력입니다")
+        }
+        var on = before
+        if before.power != .on {
+            guard before.volume <= limit else {
+                throw Stop(message: "대기 전 음량(\(before.volume))이 상한(\(limit))보다 높아 켜지 않았습니다. 리모컨이나 KEF Connect로 음량을 낮춘 뒤 켜세요")
+            }
+            try check(token)
+            try await driver.setPower(true)
+            on = try await verify(driver, token, attempts: powerVerifyAttempts, delay: powerVerifyDelay, tolerateTransient: true) {
+                $0.power == .on && $0.sourceId != nil
+            }
+        }
+        guard on.volume <= limit else {
+            notice = "켜졌습니다. 음량(\(on.volume))이 상한(\(limit))보다 높으니 먼저 낮추세요"
+            return
+        }
+        if let target, device.capabilities.contains(.source) {
+            try await switchSource(driver, token, on, to: target, limit: limit, device: device)
+        }
     }
 
     // MARK: Helpers
@@ -394,17 +473,23 @@ public final class SpeakerController {
         return state
     }
 
+    /// `tolerateTransient` lets reads fail while the device changes power
+    /// state; only the last attempt's error counts.
     private func verify(
         _ driver: any SpeakerDriver, _ token: Int,
-        attempts: Int? = nil, delay: Duration? = nil,
+        attempts: Int? = nil, delay: Duration? = nil, tolerateTransient: Bool = false,
         _ predicate: (SpeakerSnapshot) -> Bool
     ) async throws -> SpeakerSnapshot {
         let attempts = attempts ?? verifyAttempts
         for attempt in 0..<attempts {
             if attempt > 0 { try await sleep(delay ?? verifyDelay) }
             try check(token)
-            let state = try await read(driver, token)
-            if predicate(state) { return state }
+            do {
+                let state = try await read(driver, token)
+                if predicate(state) { return state }
+            } catch let error where tolerateTransient && attempt < attempts - 1 && !(error is Cancelled) {
+                continue
+            }
         }
         throw VerificationError()
     }
