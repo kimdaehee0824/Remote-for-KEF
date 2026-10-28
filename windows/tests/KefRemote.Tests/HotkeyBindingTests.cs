@@ -1,5 +1,5 @@
 using System.Text.Json;
-using KefRemote.Windows;
+using KefRemote.Desktop;
 using Xunit;
 
 namespace KefRemote.Tests;

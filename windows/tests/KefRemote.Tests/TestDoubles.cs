@@ -40,12 +40,44 @@ sealed class FakeDriver : ISpeakerDriver
     public async Task<SpeakerState> ReadAsync(CancellationToken ct = default)
     {
         Reads++;
+        AdvancePower();
         if (Gate != null) await Gate.Task;
         if (Broken) throw new HttpRequestException("offline");
-        return new SpeakerState { Power = Power, SourceId = Source, Volume = Volume, Muted = Muted, Valid = true };
+        return new SpeakerState { Power = Power, SourceId = Power == PowerState.Standby ? null : Source, Volume = Volume, Muted = Muted, Valid = true };
     }
 
-    public Task SetVolumeAsync(int volume, CancellationToken ct = default) { Writes++; if (!IgnoreWrites) Volume = volume; return Task.CompletedTask; }
+    public readonly List<int> VolumeWrites = [];
+    public Func<int, int, int?>? Overshoot;
+    /// <summary>Reads that report the old power state after a power write, like a speaker that takes a while.</summary>
+    public int PowerLagReads;
+    PowerState? pendingPower;
+
+    public Task SetVolumeAsync(int volume, CancellationToken ct = default)
+    {
+        Writes++;
+        VolumeWrites.Add(volume);
+        if (!IgnoreWrites) Volume = volume;
+        return Task.CompletedTask;
+    }
+
+    public Task SetPowerAsync(bool on, CancellationToken ct = default)
+    {
+        Writes++;
+        if (IgnoreWrites) return Task.CompletedTask;
+        if (PowerLagReads > 0) pendingPower = on ? PowerState.On : PowerState.Standby;
+        else Power = on ? PowerState.On : PowerState.Standby;
+        return Task.CompletedTask;
+    }
+
+    public int? ApproachOvershoot(int current, int target) => Overshoot?.Invoke(current, target);
+
+    void AdvancePower()
+    {
+        if (pendingPower is not PowerState next) return;
+        if (PowerLagReads-- > 0) return;
+        Power = next;
+        pendingPower = null;
+    }
     public Task SetMuteAsync(bool muted, CancellationToken ct = default) { Writes++; if (!IgnoreWrites) Muted = muted; return Task.CompletedTask; }
 
     public Task SetSourceAsync(string sourceId, CancellationToken ct = default)

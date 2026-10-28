@@ -46,6 +46,31 @@ public class KefW2DriverTests
     }
 
     [Fact]
+    public async Task PowerGoesThroughInputSetting()
+    {
+        var device = new FakeKefDevice("secret");
+        using var driver = Driver(device, "secret");
+        await driver.ConnectAsync();
+        Assert.True(driver.Capabilities.HasFlag(DriverCapabilities.Power));
+        await driver.SetPowerAsync(false);
+        var off = await driver.ReadAsync();
+        Assert.Equal((PowerState.Standby, null), (off.Power, off.SourceId));
+        await driver.SetPowerAsync(true);
+        var on = await driver.ReadAsync();
+        Assert.Equal((PowerState.On, "usb"), (on.Power, on.SourceId));
+    }
+
+    [Fact]
+    public async Task OvershootOnlyWhenRaising()
+    {
+        using var driver = Driver(new FakeKefDevice());
+        await driver.ConnectAsync();
+        ISpeakerDriver d = driver;
+        Assert.Equal(17, d.ApproachOvershoot(5, 12));
+        Assert.Null(d.ApproachOvershoot(30, 12));
+    }
+
+    [Fact]
     public async Task WrongPasswordIsRejected()
     {
         var device = new FakeKefDevice("secret");

@@ -41,7 +41,8 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
     public Func<long> UnixTimeMs { get; init; } = () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     public DriverCapabilities Capabilities =>
-        DriverCapabilities.Volume | DriverCapabilities.Mute | (Model?.Sources.Count > 1 ? DriverCapabilities.Source : 0);
+        DriverCapabilities.Volume | DriverCapabilities.Mute | DriverCapabilities.Power |
+        (Model?.Sources.Count > 1 ? DriverCapabilities.Source : 0);
 
     public IReadOnlyList<SourceOption> Sources => Model == null ? [] : KefModels.SourceOptions(Model);
 
@@ -120,6 +121,16 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
         if (Model == null || !Model.Sources.Contains(sourceId)) throw new SpeakerException("지원하지 않는 입력: " + sourceId);
         return SetDataAsync(SourcePath, KefW2Protocol.Typed("kefPhysicalSource", sourceId), ct);
     }
+
+    /// <summary>
+    /// The W2 firmware switches power through the input setting: <c>standby</c> turns the speaker off and
+    /// <c>powerOn</c> wakes it on the input it had before standby.
+    /// </summary>
+    public Task SetPowerAsync(bool on, CancellationToken ct = default) =>
+        SetDataAsync(SourcePath, KefW2Protocol.Typed("kefPhysicalSource", on ? "powerOn" : "standby"), ct);
+
+    public int? ApproachOvershoot(int current, int target) =>
+        target > current ? KefVolumeCurve.Overshoot(target) : null;
 
     Task<string> GetDataAsync(string path, CancellationToken ct) =>
         RequestAsync("GET", KefW2Protocol.GetDataUrl(Host, path), null, AuthMode == "all", ct);

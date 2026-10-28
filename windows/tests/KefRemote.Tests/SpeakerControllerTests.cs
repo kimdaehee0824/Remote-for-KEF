@@ -53,7 +53,7 @@ public class SpeakerControllerTests
         var c = await Connected(f);
         await c.StepVolumeAsync(1);
         Assert.Equal(0, f.Writes);
-        Assert.Contains("상한", c.Status);
+        Assert.Contains("상한", c.Notice);
     }
 
     [Fact]
@@ -97,10 +97,22 @@ public class SpeakerControllerTests
     {
         var f = new FakeDriver();
         var c = await Connected(f);
-        now += SpeakerController.FreshMilliseconds;
+        now += SpeakerController.StaleMilliseconds;
         Assert.False(c.CanControl);
         await c.StepVolumeAsync(1);
         Assert.Equal(0, f.Writes);
+    }
+
+    [Fact]
+    public async Task CommandsWorkBetweenSlowPolls()
+    {
+        // Hidden-window polling runs every 4 s plus up to 1.5 s of request time. Input must not drop out in between.
+        var f = new FakeDriver();
+        var c = await Connected(f);
+        now += (long)c.NextPollDelay(windowVisible: false).TotalMilliseconds + 1500;
+        Assert.True(c.CanControl);
+        await c.StepVolumeAsync(1);
+        Assert.Equal((21, 1), (f.Volume, f.Writes));
     }
 
     [Fact]
@@ -252,7 +264,7 @@ public class SpeakerControllerTests
         var c = await Connected(f);
         await c.SelectSourceAsync("wifi");
         Assert.Equal(("wifi", true, 2), (f.Source, f.Muted, f.Writes));
-        Assert.Contains("음소거를 유지", c.Status);
+        Assert.Contains("음소거를 유지", c.Notice);
     }
 
     [Fact]

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace KefRemote.Windows;
+namespace KefRemote.Desktop;
 
 [JsonConverter(typeof(JsonStringEnumConverter<HotkeyAction>))]
 public enum HotkeyAction

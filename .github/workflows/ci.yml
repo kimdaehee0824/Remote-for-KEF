@@ -2,22 +2,67 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet build windows/KefRemote.slnx -c Release
-      - run: dotnet test windows/KefRemote.slnx -c Release --no-build
+
+      - name: Unit tests
+        run: dotnet test windows/tests/KefRemote.Tests/KefRemote.Tests.csproj -c Release
+
+      - name: Publish app (x64, ARM64)
+        shell: pwsh
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            $platform = if ($arch -eq 'x64') { 'x64' } else { 'ARM64' }
+            dotnet publish windows/src/KefRemote.App/KefRemote.App.csproj -c Release -r "win-$arch" -p:Platform=$platform -o "dist/RemoteForKEF-win-$arch"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      # Runs the real app against a simulated speaker, walks every screen state and saves screenshots.
+      - name: UI self-test (x64)
+        shell: pwsh
+        run: |
+          $out = Join-Path $pwd 'self-test'
+          $p = Start-Process -FilePath 'dist/RemoteForKEF-win-x64/RemoteForKEF.exe' -ArgumentList '--self-test', "`"$out`"" -PassThru
+          $done = $p.WaitForExit(240000)
+          if (-not $done) { $p.Kill() }
+          if (Test-Path "$out/report.txt") { Get-Content "$out/report.txt" }
+          if (Test-Path "$out/settings/log.txt") { Get-Content "$out/settings/log.txt" }
+          if (-not $done) { throw 'self-test timed out' }
+          if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
+
+      - name: Upload self-test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-self-test
+          path: self-test
+          if-no-files-found: warn
+
+      - name: Upload app (x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RemoteForKEF-win-x64
+          path: dist/RemoteForKEF-win-x64
+
+      - name: Upload app (ARM64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: RemoteForKEF-win-arm64
+          path: dist/RemoteForKEF-win-arm64
 
   macos:
-    runs-on: macos-latest
+    runs-on: macos-26
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: macos
@@ -25,8 +70,14 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift --version
       - run: swift test
-      # Compiles the SwiftUI app target and assembles the .app bundle.
-      - run: scripts/build-app.sh
+      # Universal (Apple silicon + Intel) app bundle, ad hoc signed.
+      - run: scripts/build-app.sh --universal
+      - name: Zip app
+        run: ditto -c -k --keepParent "build/Remote for KEF.app" "build/RemoteForKEF-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RemoteForKEF-macos
+          path: macos/build/RemoteForKEF-macos.zip
 
   swift-linux:
     runs-on: ubuntu-latest

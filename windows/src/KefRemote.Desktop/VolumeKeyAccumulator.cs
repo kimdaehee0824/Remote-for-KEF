@@ -1,4 +1,4 @@
-namespace KefRemote.Windows;
+namespace KefRemote.Desktop;
 
 /// <summary>
 /// What the hotkey layer needs to know about the speaker. <see cref="Ready"/> is true when the controller holds a
@@ -31,6 +31,7 @@ public enum PressOutcome
 /// </summary>
 public sealed class VolumeKeyAccumulator
 {
+    /// <summary>Volume units per press, 1–10, or <see cref="VolumeSteps.Perceptual"/> to follow the loudness table.</summary>
     public int Step { get; set; } = 1;
     /// <summary>Quiet time after the last press before the target is sent.</summary>
     public long DebounceMs { get; set; } = 120;
@@ -140,9 +141,10 @@ public sealed class VolumeKeyAccumulator
     public static int NextTarget(int current, int direction, int step, int limit)
     {
         if (current is < 0 or > 100) throw new ArgumentOutOfRangeException(nameof(current));
-        if (step is < 1 or > 10) throw new ArgumentOutOfRangeException(nameof(step));
+        if (step is < VolumeSteps.Perceptual or > 10) throw new ArgumentOutOfRangeException(nameof(step));
         limit = Math.Clamp(limit, 0, 100);
-        if (direction > 0) return current >= limit ? current : Math.Min(limit, current + step);
-        return Math.Max(0, current - step);
+        int next = step == VolumeSteps.Perceptual ? VolumeSteps.NextPerceptual(current, direction) : current + direction * step;
+        if (direction > 0) return current >= limit ? current : Math.Min(limit, next);
+        return Math.Max(0, next);
     }
 }
