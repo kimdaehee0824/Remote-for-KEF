@@ -12,6 +12,9 @@ final class FakeDriver: SpeakerDriver {
     var resetMuteOnSource = false
     var writes: [String] = []
     var reads = 0
+    /// Reads that fail right after a power change, like a speaker restarting its network.
+    var failuresAfterPower = 0
+    private var failingReads = 0
     /// Suspends the next read until `release()` is called.
     var holdNextRead = false
     private var held: CheckedContinuation<Void, Never>?
@@ -47,6 +50,10 @@ final class FakeDriver: SpeakerDriver {
             await withCheckedContinuation { held = $0 }
         }
         if broken { throw FakeError.offline }
+        if failingReads > 0 {
+            failingReads -= 1
+            throw FakeError.offline
+        }
         return SpeakerSnapshot(power: power, sourceId: power == .on ? source : nil, volume: volume, muted: muted)
     }
 
@@ -70,6 +77,11 @@ final class FakeDriver: SpeakerDriver {
     func setPower(_ on: Bool) async throws {
         writes.append(on ? "power=on" : "standby")
         power = on ? .on : .standby
+        failingReads = failuresAfterPower
+    }
+
+    nonisolated func approachOvershoot(current: Int, target: Int) -> Int? {
+        target > current && target < 41 ? target + 2 : nil
     }
 }
 
@@ -160,6 +172,17 @@ struct SpeakerControllerTests {
         controller.setVolume(35)
         await settle(controller)
         #expect(driver.writes == ["volume=25"])
+    }
+
+    @Test func deviceLimitIsReadAgain() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver, limit: 40)
+        #expect(!controller.limitFromDevice)
+        driver.deviceLimit = 25
+        await controller.refreshDevice()
+        #expect(controller.effectiveLimit == 25)
+        #expect(controller.limitFromDevice)
+        #expect(driver.writes.isEmpty)
     }
 
     @Test func zeroFloor() {
@@ -357,8 +380,89 @@ struct SpeakerControllerTests {
         #expect(controller.lastActiveSource == "usb")
         controller.wake(to: "usb")
         await settle(controller)
-        #expect(driver.writes == ["standby", "source=usb"])
+        #expect(driver.writes == ["standby", "power=on"])
         #expect(controller.snapshot?.power == .on)
+    }
+
+    @Test func wakeToAnotherInputSwitchesMuted() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        let controller = await connected(driver)
+        controller.wake(to: "wifi")
+        await settle(controller)
+        #expect(driver.writes == ["power=on", "mute=true", "source=wifi", "mute=false"])
+        #expect(controller.snapshot?.sourceId == "wifi")
+        #expect(controller.snapshot?.muted == false)
+    }
+
+    @Test func wakeWithoutInputKeepsLastInput() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        let controller = await connected(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["power=on"])
+        #expect(controller.snapshot?.sourceId == "usb")
+    }
+
+    @Test func powerChangesTolerateTransientReadErrors() async {
+        let driver = FakeDriver()
+        driver.failuresAfterPower = 2
+        let controller = await connected(driver)
+        controller.standby()
+        await settle(controller)
+        #expect(controller.snapshot?.power == .standby)
+        controller.wake()
+        await settle(controller)
+        #expect(controller.phase == .online)
+        #expect(controller.snapshot?.power == .on)
+        #expect(driver.writes == ["standby", "power=on"])
+    }
+
+    @Test func approachFromAboveWritesOvershootFirst() async {
+        let driver = FakeDriver()
+        driver.volume = 10
+        let controller = await connected(driver)
+        controller.approachFromAbove = true
+        controller.setVolume(20)
+        await settle(controller)
+        #expect(driver.writes == ["volume=22", "volume=20"])
+        #expect(controller.snapshot?.volume == 20)
+    }
+
+    @Test func overshootIsCappedAtLimit() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver)
+        controller.approachFromAbove = true
+        controller.setVolume(29)
+        await settle(controller)
+        #expect(driver.writes == ["volume=30", "volume=29"])
+        driver.writes = []
+        controller.setVolume(30)
+        await settle(controller)
+        #expect(driver.writes == ["volume=30"])
+    }
+
+    @Test func loweringNeverOvershoots() async {
+        let driver = FakeDriver()
+        driver.volume = 25
+        let controller = await connected(driver)
+        controller.approachFromAbove = true
+        controller.setVolume(20)
+        await settle(controller)
+        #expect(driver.writes == ["volume=20"])
+    }
+
+    @Test func activityShowsTheCommandInProgress() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver)
+        driver.holdNextRead = true
+        controller.selectSource("wifi")
+        await waitForHeldRead(driver)
+        #expect(controller.activity == .source("wifi"))
+        driver.release()
+        await settle(controller)
+        #expect(controller.activity == nil)
     }
 
     @Test func wakeRefusedAboveLimit() async {

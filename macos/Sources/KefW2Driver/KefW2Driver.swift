@@ -34,9 +34,20 @@ public actor KefW2Driver: SpeakerDriver {
         KefW2Client.validatedHost(text)
     }
 
+    /// Also used to re-read the device limit while connected, so the previous
+    /// identity stays in place for concurrent reads until this one succeeds.
+    /// A failure leaves the driver unusable until the next successful connect.
     public func connect() async throws -> DeviceInfo {
-        authMode = nil
-        profile = nil
+        do {
+            return try await identify()
+        } catch {
+            authMode = nil
+            profile = nil
+            throw error
+        }
+    }
+
+    private func identify() async throws -> DeviceInfo {
         let mode = try await readAuthMode()
         let secure = mode == .all
         let model = try KefJSON.string(await client.get(Path.modelName, secure: secure))
@@ -58,7 +69,7 @@ public actor KefW2Driver: SpeakerDriver {
             name: name,
             model: profile.displayName,
             firmware: firmware,
-            capabilities: profile.sourceIds.count > 1 ? [.volume, .mute, .source] : [.volume, .mute],
+            capabilities: profile.sourceIds.count > 1 ? [.volume, .mute, .source, .power] : [.volume, .mute, .power],
             sources: profile.sources,
             deviceVolumeLimit: deviceLimit,
             verifiedModel: profile.verified
@@ -128,9 +139,14 @@ public actor KefW2Driver: SpeakerDriver {
         try await write(Path.source, .physicalSource(sourceId))
     }
 
-    /// Power control is not offered until it is verified on real hardware.
+    /// Power goes through the input setting, like the KEF Connect app: `standby`
+    /// turns the speaker off and `powerOn` wakes it on the input it had before.
     public func setPower(_ on: Bool) async throws {
-        throw KefError.invalidResponse("이 기기는 전원 제어를 지원하지 않습니다")
+        try await write(Path.source, .physicalSource(on ? "powerOn" : "standby"))
+    }
+
+    public nonisolated func approachOvershoot(current: Int, target: Int) -> Int? {
+        target > current ? KefVolumeCurve.overshoot(for: target) : nil
     }
 
     private func write(_ path: String, _ value: KefJSON.Typed) async throws {

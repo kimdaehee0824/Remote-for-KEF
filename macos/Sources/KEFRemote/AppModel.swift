@@ -3,6 +3,13 @@ import KefRemoteCore
 import KefW2Driver
 import Observation
 import ServiceManagement
+import SwiftUI
+
+enum SettingsTab: Hashable {
+    case general
+    case speaker
+    case volume
+}
 
 /// App-level state: saved settings, the speaker controller and system hooks.
 @MainActor
@@ -15,27 +22,43 @@ final class AppModel {
     private(set) var host: String
     private(set) var hasPassword: Bool
     var showsVolumeInMenuBar: Bool {
-        didSet { UserDefaults.standard.set(showsVolumeInMenuBar, forKey: Keys.showVolume) }
+        didSet { defaults.set(showsVolumeInMenuBar, forKey: Keys.showVolume) }
     }
+    var approachFromAbove: Bool {
+        didSet {
+            controller.approachFromAbove = approachFromAbove
+            defaults.set(approachFromAbove, forKey: Keys.approachFromAbove)
+        }
+    }
+    /// Tab the settings window shows when it opens next.
+    var settingsTab: SettingsTab = .general
     private(set) var loginItemStatus: SMAppService.Status = .notRegistered
     private(set) var loginItemError: String?
 
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let usesKeychain: Bool
     @ObservationIgnored private var started = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var deviceReadAt: ContinuousClock.Instant?
 
     private enum Keys {
         static let host = "speakerHost"
         static let appLimit = "appVolumeLimit"
         static let showVolume = "showVolumeInMenuBar"
+        static let approachFromAbove = "approachFromAbove"
     }
 
-    init() {
-        let defaults = UserDefaults.standard
+    /// The self-test passes its own defaults and keeps away from the keychain.
+    init(defaults: UserDefaults = .standard, usesKeychain: Bool = true) {
+        self.defaults = defaults
+        self.usesKeychain = usesKeychain
         host = defaults.string(forKey: Keys.host) ?? ""
-        hasPassword = KeychainStore.password() != nil
+        hasPassword = usesKeychain && KeychainStore.password() != nil
         showsVolumeInMenuBar = defaults.object(forKey: Keys.showVolume) as? Bool ?? true
+        approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
+        controller.approachFromAbove = approachFromAbove
         if defaults.object(forKey: Keys.appLimit) != nil {
-            controller.appLimit = defaults.integer(forKey: Keys.appLimit)
+            controller.appLimit = Self.clampLimit(defaults.integer(forKey: Keys.appLimit))
         }
         refreshLoginItemStatus()
     }
@@ -51,10 +74,12 @@ final class AppModel {
     var appLimit: Int {
         get { controller.appLimit }
         set {
-            controller.appLimit = min(100, max(0, newValue))
-            UserDefaults.standard.set(controller.appLimit, forKey: Keys.appLimit)
+            controller.appLimit = Self.clampLimit(newValue)
+            defaults.set(controller.appLimit, forKey: Keys.appLimit)
         }
     }
+
+    private static func clampLimit(_ value: Int) -> Int { min(100, max(1, value)) }
 
     /// Validates and saves the address, then reconnects read-only.
     /// `password` nil keeps the stored one; an empty string removes it.
@@ -62,31 +87,67 @@ final class AppModel {
         guard let normalized = KefW2Driver.validatedHost(input) else {
             return KefError.invalidHost.description
         }
-        do {
-            if let password {
-                if password.isEmpty {
-                    try KeychainStore.deletePassword()
-                } else {
-                    try KeychainStore.setPassword(password)
+        if usesKeychain {
+            do {
+                if let password {
+                    if password.isEmpty {
+                        try KeychainStore.deletePassword()
+                    } else {
+                        try KeychainStore.setPassword(password)
+                    }
                 }
+            } catch {
+                return "암호를 키체인에 저장하지 못했습니다"
             }
-        } catch {
-            return "암호를 키체인에 저장하지 못했습니다"
+            hasPassword = KeychainStore.password() != nil
         }
         host = normalized
-        hasPassword = KeychainStore.password() != nil
-        UserDefaults.standard.set(normalized, forKey: Keys.host)
+        defaults.set(normalized, forKey: Keys.host)
         connect()
         return nil
     }
 
     /// Building a new driver invalidates everything queued for the old one.
     func connect() {
-        guard !host.isEmpty, let driver = try? KefW2Driver(host: host, password: KeychainStore.password() ?? "") else {
+        let password = usesKeychain ? KeychainStore.password() ?? "" : ""
+        guard !host.isEmpty, let driver = try? KefW2Driver(host: host, password: password) else {
             controller.disconnect()
             return
         }
+        connect(using: driver)
+    }
+
+    func connect(using driver: any SpeakerDriver) {
+        deviceReadAt = .now
         Task { await controller.connect(driver) }
+    }
+
+    // MARK: Panel
+
+    func panelDidAppear() {
+        controller.isPanelVisible = true
+        Task {
+            await controller.refresh()
+            await refreshDeviceIfStale()
+        }
+    }
+
+    func panelDidDisappear() {
+        controller.isPanelVisible = false
+    }
+
+    /// The KEF maximum volume can change in KEF Connect at any time; it is read
+    /// again when the panel or settings open, at most every 30 seconds.
+    func refreshDeviceIfStale() async {
+        if let deviceReadAt, deviceReadAt.duration(to: .now) < .seconds(30) { return }
+        deviceReadAt = .now
+        await controller.refreshDevice()
+    }
+
+    func openSettings(_ tab: SettingsTab? = nil, using open: OpenSettingsAction) {
+        if let tab { settingsTab = tab }
+        NSApp.activate()
+        open()
     }
 
     // MARK: Login item
