@@ -189,18 +189,26 @@ enum SelfTest {
     }
 }
 
-/// An offscreen window that hosts one SwiftUI view and saves it as a PNG.
+/// Saves a SwiftUI view as a PNG through an offscreen window. Each capture gets
+/// a fresh window, so controls show the current state rather than the end of an
+/// animation from the previous one.
 @MainActor
 private final class Capture {
-    private let window: NSWindow
-    private let host: NSView
+    private let width: CGFloat
+    private let appearance: NSAppearance.Name
+    private let makeView: () -> AnyView
 
-    init<Content: View>(width: CGFloat, appearance: NSAppearance.Name = .aqua, @ViewBuilder content: () -> Content) {
-        let view = content()
+    init<Content: View>(width: CGFloat, appearance: NSAppearance.Name = .aqua, @ViewBuilder content: @escaping () -> Content) {
+        self.width = width
+        self.appearance = appearance
+        makeView = { AnyView(content()) }
+    }
+
+    func save(_ folder: URL, _ name: String) async throws {
+        let host = NSHostingView(rootView: makeView()
             .frame(width: width)
-            .background(Color(nsColor: .windowBackgroundColor))
-        host = NSHostingView(rootView: view)
-        window = NSWindow(
+            .background(Color(nsColor: .windowBackgroundColor)))
+        let window = NSWindow(
             contentRect: CGRect(x: -4000, y: -4000, width: width, height: 400),
             styleMask: [.borderless], backing: .buffered, defer: false
         )
@@ -208,13 +216,11 @@ private final class Capture {
         window.isReleasedWhenClosed = false
         window.contentView = host
         window.orderFrontRegardless()
-    }
+        defer { window.orderOut(nil) }
 
-    func save(_ folder: URL, _ name: String) async throws {
-        // Let SwiftUI apply the latest state and animations settle.
+        // Let SwiftUI lay out and apply the current state.
         try await Task.sleep(for: .milliseconds(450))
-        let size = host.fittingSize
-        window.setContentSize(size)
+        window.setContentSize(host.fittingSize)
         host.layoutSubtreeIfNeeded()
         host.display()
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {

@@ -18,7 +18,11 @@ struct MenuPanel: View {
             PanelHeader()
             content(controller)
             if let notice = controller.notice {
-                Label(notice, systemImage: "info.circle")
+                Label {
+                    Text(wrapping: notice)
+                } icon: {
+                    Image(systemName: "info.circle")
+                }
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,7 +91,7 @@ private struct PanelHeader: View {
 
     var body: some View {
         let controller = model.controller
-        let isOn = controller.snapshot?.power == .on && controller.phase != .idle
+        let isOn = controller.isOnline && controller.snapshot?.power == .on
         HStack(spacing: 10) {
             Image(nsImage: MenuBarGlyph.on.image)
                 .renderingMode(.template)
@@ -151,7 +155,7 @@ private struct PanelHeader: View {
                 switch c.activity {
                 case .powerOn?: true
                 case .powerOff?: false
-                default: c.snapshot?.power == .on && c.phase != .idle
+                default: c.isOnline && c.snapshot?.power == .on
                 }
             },
             set: { on in
@@ -204,7 +208,8 @@ private struct VolumeSection: View {
                 .help(state.muted ? "음소거 해제" : "음소거")
                 .accessibilityLabel(state.muted ? "음소거 해제" : "음소거")
 
-                Slider(value: binding(controller, limit: limit), in: 0...100, step: 1) {
+                // No `step`: on macOS it draws 101 tick marks. The binding rounds to whole numbers.
+                Slider(value: binding(controller, limit: limit), in: 0...100) {
                     Text("음량")
                 } onEditingChanged: { editing in
                     isDragging = editing
@@ -216,7 +221,7 @@ private struct VolumeSection: View {
             }
             HStack {
                 if state.volume > limit {
-                    Text("현재 음량이 상한(\(limit))보다 높습니다. 낮추기만 할 수 있습니다.")
+                    Text(wrapping: "현재 음량이 상한(\(limit))보다 높습니다. 낮추기만 할 수 있습니다.")
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
@@ -323,7 +328,7 @@ private struct SourceSection: View {
                 }
             }
             if switchingTo != nil {
-                Text("전환이 끝나면 음량을 확인하고 음소거를 풉니다. 새 입력이 더 크면 음소거를 유지합니다.")
+                Text(wrapping: "전환이 끝나면 음량을 확인하고 음소거를 풉니다. 새 입력이 더 크면 음소거를 유지합니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -358,7 +363,7 @@ private struct StandbySection: View {
                     }
                 }
             }
-            Text(canPower
+            Text(wrapping: canPower
                 ? "켜기 전에 음량이 상한 이하인지 확인합니다. 대기 전 음량이 상한보다 높으면 켜지 않고 이유를 알려 드립니다."
                 : "이 기기는 앱에서 켤 수 없습니다. 리모컨이나 KEF Connect로 켜 주세요.")
                 .font(.caption)
@@ -425,7 +430,7 @@ private struct PanelMessage<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.headline)
-            Text(text)
+            Text(wrapping: text)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

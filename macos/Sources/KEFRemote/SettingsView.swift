@@ -97,7 +97,7 @@ struct SpeakerSettings: View {
             } header: {
                 Text("연결")
             } footer: {
-                Text("KEF 계정 암호가 아니라 스피커 웹페이지 암호입니다. 설정하지 않았다면 비워 두세요. 연결과 재연결은 상태를 읽기만 하고 음량이나 입력을 바꾸지 않습니다. IP 주소는 KEF Connect의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다.")
+                Text(wrapping: "KEF 계정 암호가 아니라 스피커 웹페이지 암호입니다. 설정하지 않았다면 비워 두세요. 연결과 재연결은 상태를 읽기만 하고 음량이나 입력을 바꾸지 않습니다. IP 주소는 KEF Connect의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다.")
             }
 
             if let device = controller.device {
@@ -158,7 +158,7 @@ struct VolumeSettings: View {
                         Slider(value: Binding(
                             get: { Double(model.appLimit) },
                             set: { model.appLimit = Int($0.rounded()) }
-                        ), in: 1...100, step: 1)
+                        ), in: 1...100)
                         .labelsHidden()
                         .frame(width: 150)
                         TextField("앱 상한", value: $model.appLimit, format: .number)
@@ -183,7 +183,7 @@ struct VolumeSettings: View {
             } header: {
                 Text("상한")
             } footer: {
-                Text("낮추기는 언제나 됩니다. 리모컨과 KEF Connect에서 바꾸는 음량은 제한하지 않습니다.")
+                Text(wrapping: "낮추기는 언제나 됩니다. 리모컨과 KEF Connect에서 바꾸는 음량은 제한하지 않습니다.")
             }
 
             Section("음량 보정") {
@@ -232,10 +232,10 @@ private struct ApproachInfoButton: View {
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("정확한 음량 맞추기").font(.headline)
-                Text("KEF 스피커는 같은 숫자라도 아래에서 올라올 때 더 작게 들리는 구간이 있습니다. 켜면 음량을 올릴 때 목표보다 조금 높은 값을 먼저 보내고 0.1초 뒤 목표 값을 보내, 위에서 내려와 맞춘 것과 같은 크기로 들리게 합니다.")
-                Text("예: 20으로 올리면 22를 거쳐 20, 12로 올리면 17을 거쳐 12가 됩니다. 5 이하와 41 이상은 바로 보냅니다. 잠깐 거치는 값도 상한을 넘지 않고, 내릴 때는 그대로 보냅니다.")
+                Text(wrapping: "KEF 스피커는 같은 숫자라도 아래에서 올라올 때 더 작게 들리는 구간이 있습니다. 켜면 음량을 올릴 때 목표보다 조금 높은 값을 먼저 보내고 0.1초 뒤 목표 값을 보내, 위에서 내려와 맞춘 것과 같은 크기로 들리게 합니다.")
+                Text(wrapping: "예: 20으로 올리면 22를 거쳐 20, 12로 올리면 17을 거쳐 12가 됩니다. 5 이하와 41 이상은 바로 보냅니다. 잠깐 거치는 값도 상한을 넘지 않고, 내릴 때는 그대로 보냅니다.")
                     .foregroundStyle(.secondary)
-                Text("LSX II(USB 입력)에서 잰 표를 쓰며 LSX II LT에서는 아직 확인하지 않아 기본으로 꺼 둡니다.")
+                Text(wrapping: "LSX II(USB 입력)에서 잰 표를 쓰며 LSX II LT에서는 아직 확인하지 않아 기본으로 꺼 둡니다.")
                     .foregroundStyle(.secondary)
             }
             .font(.callout)
