@@ -344,7 +344,7 @@ sealed class AppHost : IDisposable
 
     void WarnHotkeysOnce()
     {
-        if (hotkeyWarningShown || environment.SelfTest) return;
+        if (hotkeyWarningShown || environment.SelfTest || environment.Demo) return;
         hotkeyWarningShown = true;
         var taken = HotkeyBindings.Where(b => Hotkeys.Status.GetValueOrDefault(b.Action) == HotkeyRegistration.InUse).Select(b => b.ToString());
         string list = string.Join(Loc.T(", ", ", ", "、"), taken);

@@ -686,7 +686,7 @@ sealed class FlyoutView
                 foreach (var child in keys.Children.OfType<TextBlock>()) child.VerticalAlignment = VerticalAlignment.Center;
             }
         }
-        hotkeyWarning.Visibility = Show(host.Hotkeys.AnyInUse);
+        hotkeyWarning.Visibility = Show(host.Hotkeys.AnyInUse && !host.Demo);
     }
 
     static Border Keycap(string key) => new()
