@@ -1,7 +1,9 @@
 using KefRemote.App.Views;
+using KefRemote.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.XamlTypeInfo;
 
 namespace KefRemote.App;
@@ -37,6 +39,7 @@ sealed class App : Application, IXamlMetadataProvider
         Resources.MergedDictionaries.Add(new XamlControlsResources());
         Ui.Styles = LoadStyles();
         Resources.MergedDictionaries.Add(Ui.Styles);
+        if (Loc.Language == UiLanguage.Japanese) UseFont(new FontFamily("Segoe UI Variable Text, Yu Gothic UI"));
 
         if (options.SelfTestFolder is string folder)
         {
@@ -50,6 +53,21 @@ sealed class App : Application, IXamlMetadataProvider
             return;
         }
         host = new AppHost(options);
+    }
+
+    /// <summary>
+    /// XAML picks the fallback font for kana by the Windows display language, not by the Language property, so on a
+    /// Korean PC Japanese came out in Malgun Gothic with full-width kana. Naming the fallback for every text keeps
+    /// Yu Gothic UI. Hangul falls back to Malgun Gothic under any language, so Korean needs nothing.
+    /// </summary>
+    void UseFont(FontFamily font)
+    {
+        Resources["ContentControlThemeFontFamily"] = font;
+        foreach (var style in Ui.Styles.Values.OfType<Style>().Where(s => s.TargetType == typeof(TextBlock)))
+            style.Setters.Add(new Setter(TextBlock.FontFamilyProperty, font));
+        var text = new Style(typeof(TextBlock));
+        text.Setters.Add(new Setter(TextBlock.FontFamilyProperty, font));
+        Resources[typeof(TextBlock)] = text;
     }
 
     static ResourceDictionary LoadStyles()
