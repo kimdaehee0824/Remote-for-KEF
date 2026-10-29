@@ -33,6 +33,8 @@ sealed class AppHost : IDisposable
     readonly SettingsStore store;
     readonly DispatcherQueue queue;
     readonly DispatcherQueueTimer pollTimer;
+    readonly DispatcherQueueTimer updateTimer;
+    readonly long startedAt = Environment.TickCount64;
     readonly MessageWindow messages;
     readonly TrayIcon tray;
     readonly HotkeyVolumeCoordinator volumeKeys;
@@ -68,6 +70,7 @@ sealed class AppHost : IDisposable
     /// <summary>The picked finish, if it is one of the shown model's.</summary>
     public KefFinish? Finish => KefFinishes.Find(Settings.SpeakerFinish, ShownModel);
     public HotkeyManager Hotkeys { get; }
+    public AppUpdater Updates { get; }
 
     /// <summary>Consecutive failed connection attempts. The flyout shows "offline" instead of "connecting" while above 0.</summary>
     public int ConnectFailures { get; private set; }
@@ -130,6 +133,17 @@ sealed class AppHost : IDisposable
         pollTimer.IsRepeating = false;
         pollTimer.Tick += async (_, _) => await PollTickAsync();
 
+        Updates = environment.SelfTest || environment.Demo ? AppUpdater.ForScreens(queue) : new AppUpdater(queue, enabled: true);
+        Updates.Changed += () => Changed?.Invoke();
+        Updates.ReadyInBackground += OnUpdateReady;
+        updateTimer = queue.CreateTimer();
+        updateTimer.IsRepeating = false;
+        updateTimer.Tick += async (_, _) =>
+        {
+            updateTimer.Stop();
+            await CheckForUpdatesAsync(userInitiated: false);
+        };
+
         if (!environment.SelfTest)
         {
             showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Program.ShowEventName);
@@ -142,6 +156,12 @@ sealed class AppHost : IDisposable
         _ = ConnectAsync();
 
         if (Hotkeys.AnyInUse) WarnHotkeysOnce();
+        if (Program.UpdatedTo is string updatedTo && !environment.SelfTest && !environment.Demo)
+        {
+            tray.ShowBalloon(Loc.T("Remote for KEF 업데이트 완료", "Remote for KEF updated", "Remote for KEFをアップデートしました"),
+                Loc.T($"{updatedTo} 버전으로 업데이트했습니다.", $"Now on version {updatedTo}.", $"バージョン {updatedTo} にアップデートしました。"));
+        }
+        ScheduleUpdateCheck();
     }
 
     // ---------- connection ----------
@@ -299,6 +319,55 @@ sealed class AppHost : IDisposable
         SaveSettings();
     }
 
+    // ---------- updates ----------
+
+    /// <summary>Looks for a newer release and downloads it: once a day while automatic updates are on, or from the button in settings.</summary>
+    public async Task CheckForUpdatesAsync(bool userInitiated)
+    {
+        updateTimer.Stop();
+        bool checkedOk = await Updates.CheckAndDownloadAsync(userInitiated);
+        if (checkedOk)
+        {
+            Settings.LastUpdateCheck = DateTime.UtcNow;
+            store.Save(Settings);
+        }
+        // Offline or GitHub unreachable: try again in an hour instead of waiting a day.
+        ScheduleUpdateCheck(checkedOk ? null : TimeSpan.FromHours(1));
+    }
+
+    public void SetAutoUpdate(bool enabled)
+    {
+        Settings.AutoUpdate = enabled;
+        SaveSettings();
+        ScheduleUpdateCheck();
+    }
+
+    /// <summary>Applies the downloaded version now: the app exits and Velopack starts the new one in the tray.</summary>
+    public void RestartToUpdate()
+    {
+        if (Updates.RestartToUpdate()) Exit();
+    }
+
+    void ScheduleUpdateCheck(TimeSpan? after = null)
+    {
+        updateTimer.Stop();
+        if (exiting || !Settings.AutoUpdate || Updates.Stage is UpdateStage.Unavailable or UpdateStage.Ready) return;
+        TimeSpan delay = after ?? UpdateSchedule.NextCheck(Settings.LastUpdateCheck, DateTime.UtcNow, TimeSpan.FromMilliseconds(Environment.TickCount64 - startedAt));
+        updateTimer.Interval = delay > TimeSpan.FromSeconds(1) ? delay : TimeSpan.FromSeconds(1);
+        updateTimer.Start();
+    }
+
+    void OnUpdateReady(string version)
+    {
+        if (Settings.UpdateNoticeShownFor == version) return;
+        Settings.UpdateNoticeShownFor = version;
+        store.Save(Settings);
+        tray.ShowBalloon(Loc.T("Remote for KEF 업데이트 준비 완료", "Remote for KEF update ready", "Remote for KEFのアップデートの準備ができました"),
+            Loc.T($"{version} 버전은 다음에 앱을 시작할 때 적용됩니다. 설정 > 일반에서 바로 다시 시작해 적용할 수도 있습니다.",
+                $"Version {version} is applied the next time the app starts. You can also restart now from Settings > General.",
+                $"バージョン {version} は次にアプリを起動したときに適用されます。設定 > 一般からすぐに再起動して適用することもできます。"));
+    }
+
     // ---------- surfaces ----------
 
     public void ShowFlyout() => flyout.Show(TrayAnchor(null));
@@ -400,6 +469,7 @@ sealed class AppHost : IDisposable
     {
         exiting = true;
         pollTimer.Stop();
+        updateTimer.Stop();
         foreach (var t in laterTimers) t.Stop();
         laterTimers.Clear();
         showWait?.Unregister(null);

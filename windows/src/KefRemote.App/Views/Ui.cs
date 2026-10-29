@@ -18,7 +18,7 @@ static class Glyphs
         Usb = "\uE88E", Wifi = "\uE701", Bluetooth = "\uE702", Tv = "\uE7F4", Optical = "\uE706", Audio = "\uE8D6",
         Network = "\uE968", Limit = "\uE72E", Folder = "\uE838", Link = "\uE71B", Pin = "\uE840", Play = "\uE768",
         Refresh = "\uE72C", Message = "\uE8BD", Sort = "\uE8CB", Volume = "\uE767", Home = "\uE80F",
-        Up = "\uE70E", Down = "\uE70D", Color = "\uE790";
+        Up = "\uE70E", Down = "\uE70D", Color = "\uE790", Update = "\uE895", Download = "\uE896";
 
     public static string ForSource(string id) => id switch
     {

@@ -2,6 +2,7 @@ using KefRemote.App.Native;
 using KefRemote.Core;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Velopack;
 
 namespace KefRemote.App;
 
@@ -9,6 +10,9 @@ static class Program
 {
     const string MutexName = @"Local\KefRemote.Instance";
     public const string ShowEventName = @"Local\KefRemote.Show";
+
+    /// <summary>Set when Velopack started this process right after applying an update to this version.</summary>
+    public static string? UpdatedTo { get; private set; }
 
     /// <summary>
     /// Arguments:
@@ -20,6 +24,13 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        // First, before anything else runs: Velopack starts the app with its own arguments while installing,
+        // updating and uninstalling, and applies a downloaded update here before the app starts.
+        VelopackApp.Build()
+            .OnBeforeUninstallFastCallback(_ => StartupManager.Remove())
+            .OnRestarted(v => UpdatedTo = v.ToString())
+            .Run();
+
         var options = LaunchOptions.Parse(args);
         if (options.Language is UiLanguage language) Loc.Language = language;
 

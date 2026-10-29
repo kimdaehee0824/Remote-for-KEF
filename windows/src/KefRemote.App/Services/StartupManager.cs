@@ -37,4 +37,11 @@ static class StartupManager
         if (enabled) key.SetValue(ValueName, Command);
         else if (key.GetValue(ValueName) != null) key.DeleteValue(ValueName);
     }
+
+    /// <summary>Uninstall: drop the entry whatever path it points to.</summary>
+    public static void Remove()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+        if (key?.GetValue(ValueName) != null) key.DeleteValue(ValueName);
+    }
 }

@@ -34,6 +34,15 @@ public sealed class AppSettings
     /// <summary>The one-time notice that closing the settings window keeps the app in the tray was shown.</summary>
     public bool TrayNoticeShown { get; set; }
 
+    /// <summary>Look for a new release once a day, download it in the background and apply it on the next start.</summary>
+    public bool AutoUpdate { get; set; } = true;
+
+    /// <summary>When the last release check finished, in UTC.</summary>
+    public DateTime? LastUpdateCheck { get; set; }
+
+    /// <summary>The release whose "ready to install" notice was already shown, so it shows once per version.</summary>
+    public string? UpdateNoticeShownFor { get; set; }
+
     /// <summary>Global shortcuts. Empty means the defaults; an entry with Key 0 means that action is turned off.</summary>
     public List<HotkeyBinding> Hotkeys { get; set; } = [];
 

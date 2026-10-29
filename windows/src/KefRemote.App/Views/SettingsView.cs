@@ -189,6 +189,7 @@ sealed class SettingsView
         var openTaskbar = new Button { Content = Loc.T("작업 표시줄 설정 열기", "Open taskbar settings", "タスクバーの設定を開く") };
         openTaskbar.Click += async (_, _) => await Launcher.LaunchUriAsync(new Uri("ms-settings:taskbar"));
 
+        var (updates, refreshUpdates) = UpdateCards();
         var panel = Ui.Column(4,
             Ui.PageTitle(Loc.T("일반", "General", "一般")),
             Ui.Card(Glyphs.Play, Loc.T("Windows 시작 시 실행", "Start with Windows", "Windows起動時に実行"), Loc.T("로그인하면 알림 영역에서 조용히 시작합니다", "Starts quietly in the notification area when you sign in", "サインインすると通知領域で静かに起動します"), startup),
@@ -196,8 +197,73 @@ sealed class SettingsView
             Ui.GroupHeader(Loc.T("알림 영역 아이콘", "Notification area icon", "通知領域のアイコン")),
             Ui.Card(Glyphs.Pin, Loc.T("아이콘을 항상 보이게 두기", "Keep the icon visible", "アイコンを常に表示する"),
                 Loc.T("Windows 11은 새 아이콘을 작업 표시줄의 ^ 안에 숨깁니다. 작업 표시줄 설정의 '기타 시스템 트레이 아이콘'에서 Remote for KEF를 켜 두면 한 번에 누를 수 있습니다.", "Windows 11 hides new icons behind the ^ on the taskbar. Turn on Remote for KEF under 'Other system tray icons' in taskbar settings to reach it in one click.", "Windows 11は新しいアイコンをタスクバーの ^ の中に隠します。タスクバーの設定の「その他のシステム トレイ アイコン」でRemote for KEFをオンにすると、ワンクリックで開けます。"),
-                openTaskbar));
-        return (panel, () => startup.IsOn = host.SelfTest ? host.Settings.StartWithWindows : StartupManager.IsEnabled);
+                openTaskbar),
+            Ui.GroupHeader(Loc.T("업데이트", "Updates", "アップデート")),
+            updates);
+        return (panel, () =>
+        {
+            startup.IsOn = host.SelfTest ? host.Settings.StartWithWindows : StartupManager.IsEnabled;
+            refreshUpdates();
+        });
+    }
+
+    /// <summary>Version with the check button, and the automatic update switch (the PowerToys General page layout).</summary>
+    (UIElement, Action) UpdateCards()
+    {
+        var updater = host.Updates;
+        var check = new Button { Content = Loc.T("업데이트 확인", "Check for updates", "アップデートを確認") };
+        check.Click += async (_, _) => await host.CheckForUpdatesAsync(userInitiated: true);
+        var restart = Ui.AccentButton(Loc.T("다시 시작해 업데이트", "Restart to update", "再起動してアップデート"));
+        restart.Click += (_, _) => host.RestartToUpdate();
+        var ring = new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed };
+        var releases = new HyperlinkButton { Content = Loc.T("릴리스 열기", "Open releases", "リリースを開く"), NavigateUri = new Uri(AppUpdater.RepositoryUrl + "/releases/latest") };
+        var versionCard = Ui.Card(Glyphs.Update, Ui.Text("Remote for KEF " + AppVersion()), "", Ui.Row(12, ring, check, restart, releases), out var status);
+
+        var auto = new ToggleSwitch { OnContent = Loc.T("켬", "On", "オン"), OffContent = Loc.T("끔", "Off", "オフ") };
+        auto.Toggled += (_, _) =>
+        {
+            if (!updating) host.SetAutoUpdate(auto.IsOn);
+        };
+        var autoCard = Ui.Card(Glyphs.Download, Loc.T("자동으로 업데이트", "Update automatically", "自動でアップデート"),
+            Loc.T("하루에 한 번 GitHub에서 새 버전을 확인해 내려받고, 다음에 앱을 시작할 때 적용합니다", "Checks GitHub for a new version once a day, downloads it and applies it the next time the app starts", "1日に1回GitHubで新しいバージョンを確認してダウンロードし、次にアプリを起動したときに適用します"),
+            auto);
+
+        void Refresh()
+        {
+            var stage = updater.Stage;
+            bool installed = stage != UpdateStage.Unavailable;
+            string? v = updater.NewVersion;
+            string text = stage switch
+            {
+                UpdateStage.Unavailable => Loc.T("이 복사본은 스스로 업데이트하지 않습니다. 릴리스 페이지에서 설치 파일이나 zip을 받아 주세요.", "This copy doesn't update itself. Get the installer or the zip from the releases page.", "このコピーは自動でアップデートしません。リリースページからインストーラーかzipを入手してください。"),
+                UpdateStage.Checking => Loc.T("확인하는 중", "Checking", "確認中"),
+                UpdateStage.UpToDate => Loc.T("최신 버전입니다", "You're up to date", "最新のバージョンです"),
+                UpdateStage.Downloading => Loc.T($"{v} 버전을 내려받는 중 ({updater.Progress}%)", $"Downloading version {v} ({updater.Progress}%)", $"バージョン {v} をダウンロード中（{updater.Progress}%）"),
+                UpdateStage.Ready => Loc.T($"{v} 버전을 받았습니다. 다시 시작하면 적용됩니다.", $"Version {v} is ready. Restart the app to apply it.", $"バージョン {v} の準備ができました。再起動すると適用されます。"),
+                UpdateStage.Failed => Loc.T("업데이트를 확인하지 못했습니다. 인터넷 연결을 확인하고 다시 시도하세요.", "Couldn't check for updates. Check the internet connection and try again.", "アップデートを確認できませんでした。インターネット接続を確認して、もう一度お試しください。"),
+                _ => host.Settings.LastUpdateCheck is DateTime last
+                    ? Loc.T("마지막 확인 ", "Last checked ", "最終確認 ") + last.ToLocalTime().ToString("g", System.Globalization.CultureInfo.GetCultureInfo(Loc.Tag))
+                    : Loc.T("아직 확인하지 않았습니다", "Not checked yet", "まだ確認していません"),
+            };
+            if (status != null) status.Text = Korean.KeepWords(text);
+            bool busy = stage is UpdateStage.Checking or UpdateStage.Downloading;
+            ring.IsActive = busy;
+            ring.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+            check.IsEnabled = updater.CanCheck;
+            check.Visibility = installed && stage != UpdateStage.Ready ? Visibility.Visible : Visibility.Collapsed;
+            restart.Visibility = stage == UpdateStage.Ready ? Visibility.Visible : Visibility.Collapsed;
+            releases.Visibility = installed ? Visibility.Collapsed : Visibility.Visible;
+            auto.IsOn = host.Settings.AutoUpdate;
+            auto.IsEnabled = installed;
+        }
+        return (Ui.Column(4, versionCard, autoCard), Refresh);
+    }
+
+    static string AppVersion()
+    {
+        string version = typeof(SettingsView).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+        int plus = version.IndexOf('+');
+        return plus > 0 ? version[..plus] : version;
     }
 
     // ---------- Speaker ----------
@@ -530,9 +596,7 @@ sealed class SettingsView
 
     (UIElement, Action?) AboutPage()
     {
-        string version = typeof(SettingsView).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
-        int plus = version.IndexOf('+');
-        if (plus > 0) version = version[..plus];
+        string version = AppVersion();
 
         var github = new HyperlinkButton { Content = Loc.T("GitHub에서 열기", "Open on GitHub", "GitHubで開く"), NavigateUri = new Uri(RepositoryUrl) };
         var openFolder = new Button { Content = Loc.T("폴더 열기", "Open folder", "フォルダーを開く") };
@@ -557,6 +621,7 @@ sealed class SettingsView
             Ui.Card(Glyphs.Info, Loc.T("라이선스", "License", "ライセンス"), "MIT License", null),
             Ui.GroupHeader(Loc.T("오픈소스 고지", "Open source notices", "オープンソースライセンス")),
             Ui.Card(null, "kef-lsx-volume", Loc.T("음량 보정 표와 체감 음량 단계의 측정값을 사용합니다. ", "Its measurements are used for the volume correction table and the perceived loudness steps. ", "音量補正の表と体感音量の段階に、その測定値を使っています。") + "MIT License, Copyright (c) 2026 Robert Oberdorfer", null),
+            Ui.Card(null, "Velopack", Loc.T("앱 설치와 자동 업데이트에 사용합니다. ", "Installs and updates the app. ", "アプリのインストールと自動アップデートに使っています。") + "MIT License, Copyright (c) 2024 Velopack Ltd.", null),
             Ui.Card(null, "Windows App SDK", "MIT License, Copyright (c) Microsoft Corporation", null),
             Ui.Card(null, ".NET", "MIT License, Copyright (c) .NET Foundation and Contributors", null),
             Ui.GroupHeader(Loc.T("문제 해결", "Troubleshooting", "トラブルシューティング")),

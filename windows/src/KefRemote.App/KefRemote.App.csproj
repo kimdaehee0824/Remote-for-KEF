@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
     WinUI 3 tray app. Unpackaged and self-contained so the published folder runs as is:
-    no installer, no MSIX signing, no separate .NET or Windows App SDK runtime.
+    no MSIX signing, no separate .NET or Windows App SDK runtime. Releases wrap that folder with Velopack
+    (Setup.exe and a zip that both update themselves from GitHub releases).
     The UI is built in C# with WinUI controls instead of XAML pages. The XAML compiler only runs on Windows,
     while plain C# can be compiled (and checked) on any OS: dotnet msbuild -t:Compile -p:Platform=x64
   -->
@@ -33,6 +34,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
+    <!-- Keep in step with the vpk tool version in .github/workflows/release.yml. -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>
