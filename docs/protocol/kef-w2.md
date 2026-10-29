@@ -1,6 +1,6 @@
 # KEF W2 local HTTP API
 
-This is the protocol used by KEF's W2 platform speakers (LSX II, LSX II LT, LS50 Wireless II, LS60 Wireless, XIO) on the local network. KEF does not publish it as a supported API. Everything below was either observed on a real **LSX II LT (firmware 2.1.86, `LSXIILT_V2186`)** or taken from public reference code, and each item says which.
+This is the protocol used by KEF's W2 platform speakers (LSX II, LSX II LT, LS50 Wireless II, LS60 Wireless, XIO, LS LUXE) on the local network. KEF does not publish it as a supported API. Everything below was either observed on a real **LSX II LT (firmware 2.1.86, `LSXIILT_V2186`)** or taken from public reference code, and each item says which.
 
 Both apps in this repository implement this document. The shared test vectors are in [`spec/test-vectors/kef-w2.json`](../../spec/test-vectors/kef-w2.json); the Windows and macOS test suites both read that file.
 
@@ -44,7 +44,7 @@ A response is a one-element array holding a typed object `{"type": T, T: value}`
 
 ### Model detection
 
-`modelName` is not always a product name (LSX II LT reports `SP4077`). Use the prefix of `releasetext` before `_V` as well. Known identifiers and aliases: `LSXIILT` (`LSX2LT`), `LSXII` (`LSX2`), `LS50W2` (`LS50WII`), `LS60` (`LS60W`), `XIO`. Per-model input lists follow EvotecIT/homeassistant-kef `const.py`.
+`modelName` is not a product name but the first six characters of the KEF part number (LSX II LT reports `SP4077`; KEF sells it as `SP4077J2CA` in Sage Green). The finish is in the rest of the part number, so the API does not report it. Seen on real speakers: `SP4077` (LSX II LT), `SP4041` (LSX II), `SP4083` (XIO). From KEF's part numbers, not yet seen: `SP4025` (LS50 Wireless II), `SP4017` (LS60 Wireless), `SP4042` (LS LUXE). Use the prefix of `releasetext` before `_V` as well. Known identifiers and aliases: `LSXIILT` (`LSX2LT`), `LSXII` (`LSX2`), `LS50W2` (`LS50WII`), `LS60` (`LS60W`), `XIO`, `LSLUXE`. Per-model input lists follow EvotecIT/homeassistant-kef `const.py`, and KEF's specifications for LS LUXE.
 
 ### Consistent reads
 

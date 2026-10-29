@@ -53,7 +53,7 @@ Some devices play the same volume number at a different level depending on wheth
 
 | Id | Devices | Status | Notes |
 |---|---|---|---|
-| `kef-w2` | KEF LSX II LT, LSX II, LS50 Wireless II, LS60, XIO | **Verified** on LSX II LT only (power pending) | volume, mute, input, power. Power writes `physicalSource` = `standby` / `powerOn`, as KEF Connect does. Overshoot table from LSX II measurements by [kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume). [Protocol](protocol/kef-w2.md) |
+| `kef-w2` | KEF LSX II LT, LSX II, LS50 Wireless II, LS60, XIO, LS LUXE | **Verified** on LSX II LT only (power pending) | volume, mute, input, power. Power writes `physicalSource` = `standby` / `powerOn`, as KEF Connect does. Overshoot table from LSX II measurements by [kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume). [Protocol](protocol/kef-w2.md) |
 
 Other players are not bundled because nobody on the project could test them. Candidates with public local HTTP APIs include BluOS (port 11000, `/Status`, `/Volume`), LinkPlay/WiiM (`httpapi.asp`, often HTTPS with a self-signed certificate) and Yamaha MusicCast (Yamaha Extended Control). A driver for any of them is welcome from someone who owns the device.
 

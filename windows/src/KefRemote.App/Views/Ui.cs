@@ -180,29 +180,31 @@ static class Ui
     public static Ellipse Dot(string style) => new() { Width = 8, Height = 8, Style = Style(style), VerticalAlignment = VerticalAlignment.Center };
 
     /// <summary>
-    /// The app icon drawn as vectors (Uni-Q driver centered on the cabinet) so it stays sharp at any scale, in the
-    /// colors of the speaker's finish or, when none is picked, those of the app icon (<see cref="KefFinishes.Default"/>).
+    /// The speaker drawn as vectors so it stays sharp at any scale: the shape of <paramref name="model"/>
+    /// (<see cref="KefShapes"/>), or of the finish's model when one is picked, in the finish's colors or, when none is
+    /// picked, those of the app icon (<see cref="KefFinishes.Default"/>). With neither it is the app icon.
     /// </summary>
-    public static Viewbox AppGlyph(double size, KefFinish? finish = null)
+    public static Viewbox AppGlyph(double size, KefFinish? finish = null, string? model = null)
     {
-        finish ??= KefFinishes.Default;
-        static SolidColorBrush Brush(uint rgb) => new(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
+        var colors = finish ?? KefFinishes.Default;
         var canvas = new Canvas { Width = 48, Height = 48 };
-        void Add(Shape shape, double left, double top)
+        foreach (var figure in KefShapes.For(finish?.Model ?? model))
         {
-            Canvas.SetLeft(shape, left);
-            Canvas.SetTop(shape, top);
-            canvas.Children.Add(shape);
+            var path = new PathFigure { StartPoint = Point(figure.Start), IsClosed = true };
+            var curve = new PolyBezierSegment();
+            foreach (var point in figure.Curves) curve.Points.Add(Point(point));
+            path.Segments.Add(curve);
+            var geometry = new PathGeometry();
+            geometry.Figures.Add(path);
+            var brush = new SolidColorBrush(Color(colors.Color(figure.Paint)));
+            canvas.Children.Add(figure.Stroked
+                ? new Microsoft.UI.Xaml.Shapes.Path { Data = geometry, Stroke = brush, StrokeThickness = KefShapes.EdgeWidth }
+                : new Microsoft.UI.Xaml.Shapes.Path { Data = geometry, Fill = brush });
         }
-        var cabinet = new Rectangle
-        {
-            Width = 28, Height = 42, RadiusX = 5, RadiusY = 5,
-            Fill = Brush(finish.Cabinet), Stroke = Brush(finish.Edge), StrokeThickness = 1.5,
-        };
-        Add(cabinet, 10, 3);
-        Add(new Ellipse { Width = 22, Height = 22, Fill = Brush(finish.Trim) }, 13, 13);
-        Add(new Ellipse { Width = 16.4, Height = 16.4, Fill = Brush(finish.Cone) }, 15.8, 15.8);
-        Add(new Ellipse { Width = 6.4, Height = 6.4, Fill = Brush(finish.Tweeter) }, 20.8, 20.8);
         return new Viewbox { Width = size, Height = size, Child = canvas };
     }
+
+    static Windows.Foundation.Point Point(KefPoint p) => new(p.X, p.Y);
+
+    static Windows.UI.Color Color(uint rgb) => Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 }

@@ -195,6 +195,31 @@ static class SelfTest
                 await Capture(settings.Root, file);
             });
         }
+        await Step("unknown model", async () =>
+        {
+            speaker.ModelName = "SP4099";
+            speaker.Release = "NEWMODEL_V0100";
+            await host.ReconnectAsync();
+            Expect(c.Device?.Model == "KEF NEWMODEL", "a model the app does not know");
+            Expect(host.ShownModel == "KEF NEWMODEL" && host.Finish == null, "the app icon's drawing and colors");
+            var settings = host.OpenSettings(SettingsPage.Speaker);
+            await Capture(settings.Root, "16-settings-unknown-model.png");
+        });
+        int shot = 17;
+        foreach (var model in KefModels.Names)
+        {
+            string file = $"{shot++}-flyout-{model.ToLowerInvariant().Replace(' ', '-')}.png";
+            await Step("picked model " + model, async () =>
+            {
+                host.PickedModel = model;
+                host.Settings.SpeakerFinish = KefFinishes.For(model)[0].Id;
+                host.SaveSettings();
+                Expect(host.ShownModel == model && host.Finish?.Model == model, "drawn as " + model);
+                Expect(c.Driver?.Sources.Count == 7, "every input, as for any model the app does not know");
+                host.ShowFlyout();
+                await Capture(host.Flyout.Root, file);
+            });
+        }
         await Step("hotkeys registered", () =>
         {
             Expect(host.Hotkeys.Status.Count == 3, "three hotkey entries");
@@ -239,7 +264,10 @@ static class SelfTest
     }
 }
 
-/// <summary>In-memory LSX II LT for the self-test. Power, inputs and volume behave like the real one, instantly.</summary>
+/// <summary>
+/// In-memory LSX II LT for the self-test. Power, inputs and volume behave like the real one, instantly.
+/// The model it reports can be changed to one the app does not know.
+/// </summary>
 sealed class DemoSpeaker
 {
     public bool On = true;
@@ -248,15 +276,17 @@ sealed class DemoSpeaker
     public bool Muted;
     public bool Offline;
     public int SwitchDelayMs;
+    public string ModelName = "SP4077";
+    public string Release = "LSXIILT_V2186";
     public List<int> Writes { get; } = [];
 }
 
 sealed class DemoDriver(DemoSpeaker speaker) : ISpeakerDriver
 {
-    static readonly KefModel Model = KefModels.Resolve("SP4077", "LSXIILT_V2186");
+    KefModel Model => KefModels.Resolve(speaker.ModelName, speaker.Release);
 
     public DriverCapabilities Capabilities => DriverCapabilities.Volume | DriverCapabilities.Mute | DriverCapabilities.Source | DriverCapabilities.Power;
-    public IReadOnlyList<SourceOption> Sources { get; } = KefModels.SourceOptions(Model);
+    public IReadOnlyList<SourceOption> Sources => KefModels.SourceOptions(Model);
 
     void Online()
     {
@@ -266,7 +296,7 @@ sealed class DemoDriver(DemoSpeaker speaker) : ISpeakerDriver
     public Task<DeviceInfo> ConnectAsync(CancellationToken cancellationToken = default)
     {
         Online();
-        return Task.FromResult(new DeviceInfo(Loc.T("책상 스피커", "Desk speakers", "デスクのスピーカー"), Model.DisplayName, "LSXIILT_V2186"));
+        return Task.FromResult(new DeviceInfo(Loc.T("책상 스피커", "Desk speakers", "デスクのスピーカー"), Model.DisplayName, speaker.Release));
     }
 
     public Task<SpeakerState> ReadAsync(CancellationToken cancellationToken = default)

@@ -94,8 +94,8 @@ private struct PanelHeader: View {
         let controller = model.controller
         let isOn = controller.isOnline && controller.snapshot?.power == .on
         HStack(spacing: 10) {
-            // The speaker in the finish picked in settings, or the app's Royal Blue, dimmed while it is not on.
-            Image(nsImage: SpeakerArt.image(model.speakerFinish ?? .appDefault, size: 24))
+            // The speaker's model in the finish picked in settings, or the app's Royal Blue, dimmed while it is not on.
+            Image(nsImage: SpeakerArt.image(model.speakerFinish, model: model.shownModel, size: 24))
                 .frame(width: 30, height: 30)
                 .background(Circle().fill(Color.secondary.opacity(0.12)))
                 .opacity(isOn ? 1 : 0.6)

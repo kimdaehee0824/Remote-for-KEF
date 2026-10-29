@@ -149,6 +149,24 @@ enum SelfTest {
             try await Capture(width: 500) { SpeakerSettings().environment(model) }.save(folder, "09-settings-speaker.png")
             try await Capture(width: 500) { VolumeSettings().environment(model) }.save(folder, "10-settings-volume.png")
         }
+        await step("unknown model") {
+            speaker.model = "KEF NEWMODEL"
+            speaker.firmware = "NEWMODEL_V0100"
+            model.connect(using: driver)
+            try await waitFor("the unknown model") { controller.device?.model == "KEF NEWMODEL" && controller.isOnline }
+            try expect(model.shownModel == "KEF NEWMODEL" && model.speakerFinish == nil, "the app icon's drawing and colors")
+            try await Capture(width: 500) { SpeakerSettings().environment(model) }.save(folder, "13-settings-unknown-model.png")
+        }
+        for (index, name) in KefModels.names.enumerated() {
+            await step("picked model \(name)") {
+                model.pickedModel = name
+                model.speakerFinishID = KefFinish.finishes(for: name).first?.id
+                try expect(model.shownModel == name && model.speakerFinish?.model == name, "drawn as \(name)")
+                try expect(controller.device?.sources.count == 7, "every input, as for any model the app does not know")
+                let slug = name.lowercased().replacingOccurrences(of: " ", with: "-")
+                try await panel.save(folder, "\(14 + index)-panel-\(slug).png")
+            }
+        }
         await step("menu bar icons") {
             try saveMenuBarStrip(folder.appending(path: "11-menu-bar.png"))
         }
@@ -246,8 +264,11 @@ private final class Capture {
 }
 
 /// In-memory LSX II LT. Power, inputs and volume behave like the real one, instantly.
+/// The model it reports can be changed to one the app does not know.
 @MainActor
 final class DemoSpeaker {
+    var model = "LSX II LT"
+    var firmware = "LSXIILT_V2186"
     var on = true
     var source = "usb"
     var volume = 25
@@ -276,15 +297,20 @@ final class DemoDriver: SpeakerDriver {
 
     func connect() async throws -> DeviceInfo {
         try online()
+        let known = speaker.model == "LSX II LT"
+        var sources = [
+            SourceOption(id: "usb", name: "USB-C / PC"), SourceOption(id: "wifi", name: "Wi-Fi"),
+            SourceOption(id: "bluetooth", name: "Bluetooth"), SourceOption(id: "tv", name: "TV (HDMI eARC)"),
+            SourceOption(id: "optical", name: "Optical"),
+        ]
+        if !known {
+            sources += [SourceOption(id: "coaxial", name: "Coaxial"), SourceOption(id: "analog", name: "Analog")]
+        }
         return DeviceInfo(
-            name: loc("책상 스피커", "Desk speakers", "デスクのスピーカー"), model: "LSX II LT", firmware: "LSXIILT_V2186",
+            name: loc("책상 스피커", "Desk speakers", "デスクのスピーカー"), model: speaker.model, firmware: speaker.firmware,
             capabilities: [.volume, .mute, .source, .power],
-            sources: [
-                SourceOption(id: "usb", name: "USB-C / PC"), SourceOption(id: "wifi", name: "Wi-Fi"),
-                SourceOption(id: "bluetooth", name: "Bluetooth"), SourceOption(id: "tv", name: "TV (HDMI eARC)"),
-                SourceOption(id: "optical", name: "Optical"),
-            ],
-            deviceVolumeLimit: nil, verifiedModel: true
+            sources: sources,
+            deviceVolumeLimit: nil, verifiedModel: known
         )
     }
 

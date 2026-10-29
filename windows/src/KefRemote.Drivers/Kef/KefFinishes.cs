@@ -10,7 +10,28 @@ public sealed record KefFinish(string Id, string Model, string Name, uint Cabine
     /// Outline of the cabinet, lighter than a dark cabinet and darker than a light one, so the
     /// speaker keeps its shape on a background of a similar color (a dark speaker in dark mode).
     /// </summary>
-    public uint Edge => Mix(Cabinet, Luminance(Cabinet) < 0.5 ? 0xFFFFFFu : 0, Luminance(Cabinet) < 0.5 ? 0.35 : 0.18);
+    public uint Edge => Mix(Cabinet, Dark ? 0xFFFFFFu : 0, Dark ? 0.35 : 0.18);
+
+    /// <summary>The color of a part of the speaker drawing (<see cref="KefShapes"/>). The shades are mixed from the cabinet.</summary>
+    public uint Color(KefPaint paint) => paint switch
+    {
+        KefPaint.Cabinet => Cabinet,
+        KefPaint.Edge => Edge,
+        KefPaint.Trim => Trim,
+        KefPaint.Cone => Cone,
+        KefPaint.Tweeter => Tweeter,
+        // LSX II fabric wrap, set off from the cabinet-colored front a little.
+        KefPaint.Fabric => Mix(Cabinet, Dark ? 0xFFFFFFu : 0, Dark ? 0.12 : 0.1),
+        // The gap between the LSX II fabric and its front.
+        KefPaint.Seam => Mix(Cabinet, 0, Dark ? 0.45 : 0.35),
+        // LS60 plinth, halfway to the outline.
+        KefPaint.Plinth => Mix(Cabinet, Edge, 0.5),
+        // XIO top face, lit from above.
+        KefPaint.Top => Mix(Cabinet, 0xFFFFFFu, Dark ? 0.16 : 0.3),
+        _ => Cabinet,
+    };
+
+    bool Dark => Luminance(Cabinet) < 0.5;
 
     static double Luminance(uint rgb) => (0.2126 * (rgb >> 16 & 0xFF) + 0.7152 * (rgb >> 8 & 0xFF) + 0.0722 * (rgb & 0xFF)) / 255;
 
@@ -46,7 +67,7 @@ public static class KefFinishes
         new("lsx-ii/lava-red", "LSX II", "Lava Red", 0x831412, 0x323538, 0x962B2B, 0x721F1F),
 
         // LS50 Wireless II. Titanium Grey and Crimson Red are no longer sold.
-        new("ls50-wireless-ii/carbon-black", "LS50 Wireless II", "Carbon Black", 0x4C5051, 0x464645, 0xA97051, 0x81472B),
+        new("ls50-wireless-ii/carbon-black", "LS50 Wireless II", "Carbon Black", 0x4C5051, 0x2E2E2E, 0xA97051, 0x81472B),
         new("ls50-wireless-ii/mineral-white", "LS50 Wireless II", "Mineral White", 0xEFEDE5, 0x4D4B49, 0xA97051, 0x81472B),
         new("ls50-wireless-ii/sand-shell", "LS50 Wireless II", "Sand Shell", 0xD9CFC5, 0x434040, 0xD0B29B, 0xA98564),
         new("ls50-wireless-ii/moss-green", "LS50 Wireless II", "Moss Green", 0x5D6B5C, 0x423F3F, 0xD0B29A, 0xA98664),
@@ -59,6 +80,11 @@ public static class KefFinishes
         new("ls60-wireless/titanium-grey", "LS60 Wireless", "Titanium Grey", 0x6F6E6D, 0x26292C, 0xC4A385, 0xA98758),
         new("ls60-wireless/royal-blue", "LS60 Wireless", "Royal Blue", 0x3A527B, 0x25282D, 0xD3B396, 0xAA8958),
 
+        // LS LUXE
+        new("ls-luxe/dusk-titanium", "LS LUXE", "Dusk Titanium", 0xC4B9AB, 0x3B3A38, 0xBFAE97, 0x9C7A4A),
+        new("ls-luxe/eclipse-black", "LS LUXE", "Eclipse Black", 0x2F2F2F, 0x1F1F1E, 0x666262, 0x8A6E45),
+        new("ls-luxe/mineral-white", "LS LUXE", "Mineral White", 0xDADADA, 0x393836, 0xB8B8B6, 0xA08455),
+
         // XIO soundbar. Its drivers sit behind the grille, so the icon uses darker shades of it.
         new("xio/silver-grey", "XIO", "Silver Grey", 0x9F9F97, 0x72726C, 0x888881, 0x72726C),
         new("xio/slate-black", "XIO", "Slate Black", 0x34312C, 0x25231F, 0x2C2A25, 0x25231F),
@@ -70,22 +96,18 @@ public static class KefFinishes
     /// </summary>
     public static readonly KefFinish Default = All.Single(f => f.Id == "ls60-wireless/royal-blue");
 
-    /// <summary>The finishes of a model by its display name, or every finish when the model is not in the table.</summary>
-    public static IReadOnlyList<KefFinish> For(string? model)
-    {
-        var own = All.Where(f => f.Model == model).ToArray();
-        return own.Length > 0 ? own : All;
-    }
+    /// <summary>The finishes of a model by its display name, none for a model that is not in the table.</summary>
+    public static IReadOnlyList<KefFinish> For(string? model) => All.Where(f => f.Model == model).ToArray();
 
     /// <summary>
-    /// The saved finish, unless it belongs to another known model (the speaker was replaced).
-    /// Before the model is known the saved finish is used as is.
+    /// The saved finish, unless it belongs to another model (the speaker was replaced, or the app does not know the model).
+    /// Before the speaker is connected the saved finish is used as is.
     /// </summary>
     public static KefFinish? Find(string? id, string? model)
     {
         if (string.IsNullOrEmpty(id)) return null;
         var finish = All.FirstOrDefault(f => f.Id == id);
         if (finish == null) return null;
-        return string.IsNullOrEmpty(model) || For(model).Contains(finish) ? finish : null;
+        return string.IsNullOrEmpty(model) || finish.Model == model ? finish : null;
     }
 }

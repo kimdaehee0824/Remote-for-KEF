@@ -30,7 +30,7 @@
 
 あとは設定でスピーカーのIPアドレスを入力するだけです。詳しくは[使い方ガイド](docs/guide_jp.md#はじめに)をご覧ください。
 
-KEF LSX II LTで確認しています。LSX II、LS50 Wireless II、LS60、XIOは同じプロトコルですが、まだ確認していません。
+KEF LSX II LTで確認しています。LSX II、LS50 Wireless II、LS60、XIO、LS LUXEは同じプロトコルですが、まだ確認していません。
 
 ## 謝辞
 

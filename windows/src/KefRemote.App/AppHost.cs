@@ -3,6 +3,7 @@ using KefRemote.App.Views;
 using KefRemote.Core;
 using KefRemote.Desktop;
 using KefRemote.Drivers;
+using KefRemote.Drivers.Kef;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Windows.Graphics;
@@ -49,6 +50,23 @@ sealed class AppHost : IDisposable
 
     public AppSettings Settings { get; }
     public SpeakerController Controller { get; } = new();
+
+    /// <summary>The model picked in settings for this speaker address, or null.</summary>
+    public string? PickedModel
+    {
+        get => Settings.SpeakerModels.GetValueOrDefault(Settings.Host);
+        set
+        {
+            if (value == null) Settings.SpeakerModels.Remove(Settings.Host);
+            else Settings.SpeakerModels[Settings.Host] = value;
+        }
+    }
+
+    /// <summary>The model the speaker is drawn as and whose finishes are listed (<see cref="KefModels.Shown"/>).</summary>
+    public string? ShownModel => KefModels.Shown(Controller.Device?.Model, PickedModel);
+
+    /// <summary>The picked finish, if it is one of the shown model's.</summary>
+    public KefFinish? Finish => KefFinishes.Find(Settings.SpeakerFinish, ShownModel);
     public HotkeyManager Hotkeys { get; }
 
     /// <summary>Consecutive failed connection attempts. The flyout shows "offline" instead of "connecting" while above 0.</summary>

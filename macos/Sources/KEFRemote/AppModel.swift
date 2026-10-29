@@ -36,6 +36,11 @@ final class AppModel {
     var speakerFinishID: String? {
         didSet { defaults.set(speakerFinishID, forKey: Keys.speakerFinish) }
     }
+    /// Model picked per speaker address, for a speaker that reports a model the app does not know.
+    /// Only the drawing and the finish list use it.
+    private var speakerModels: [String: String] {
+        didSet { defaults.set(speakerModels, forKey: Keys.speakerModels) }
+    }
     /// Tab the settings window shows when it opens next.
     var settingsTab: SettingsTab = .general
     private(set) var loginItemStatus: SMAppService.Status = .notRegistered
@@ -53,6 +58,7 @@ final class AppModel {
         static let showVolume = "showVolumeInMenuBar"
         static let approachFromAbove = "approachFromAbove"
         static let speakerFinish = "speakerFinish"
+        static let speakerModels = "speakerModels"
     }
 
     /// The self-test passes its own defaults and keeps away from the keychain.
@@ -64,6 +70,7 @@ final class AppModel {
         showsVolumeInMenuBar = defaults.object(forKey: Keys.showVolume) as? Bool ?? true
         approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
         speakerFinishID = defaults.string(forKey: Keys.speakerFinish)
+        speakerModels = defaults.dictionary(forKey: Keys.speakerModels) as? [String: String] ?? [:]
         controller.approachFromAbove = approachFromAbove
         if defaults.object(forKey: Keys.appLimit) != nil {
             controller.appLimit = Self.clampLimit(defaults.integer(forKey: Keys.appLimit))
@@ -79,9 +86,20 @@ final class AppModel {
         if !host.isEmpty { connect() }
     }
 
-    /// The picked finish, unless it belongs to a different model than the connected speaker.
+    /// The model picked in settings for this speaker address, or nil.
+    var pickedModel: String? {
+        get { speakerModels[host] }
+        set { speakerModels[host] = newValue }
+    }
+
+    /// The model the speaker is drawn as and whose finishes are listed (`KefModels.shown`).
+    var shownModel: String? {
+        KefModels.shown(reported: controller.device?.model, picked: pickedModel)
+    }
+
+    /// The picked finish, if it is one of the shown model's.
     var speakerFinish: KefFinish? {
-        KefFinish.find(speakerFinishID, model: controller.device?.model)
+        KefFinish.find(speakerFinishID, model: shownModel)
     }
 
     var appLimit: Int {

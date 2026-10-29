@@ -263,6 +263,8 @@ sealed class SettingsView
         ((FrameworkElement)panel.Children[^1]).Margin = new Thickness(2, 12, 0, 0);
 
         string deviceSignature = "-";
+        var finishSlot = Ui.Column(0);
+        string? finishModel = null;
         void Refresh()
         {
             var c = host.Controller;
@@ -283,29 +285,60 @@ sealed class SettingsView
 
             var d = c.Device;
             string signature = d == null ? "" : $"{d.Name}|{d.Model}|{d.Firmware}|{d.DeviceVolumeLimit}";
-            if (signature == deviceSignature) return;
-            deviceSignature = signature;
-            deviceCards.Children.Clear();
-            if (d == null)
+            if (signature != deviceSignature)
             {
-                deviceCards.Children.Add(Ui.Secondary(Loc.T("연결하면 이름, 모델, 펌웨어가 표시됩니다.", "The name, model and firmware appear once connected.", "接続すると名前、モデル、ファームウェアが表示されます。")));
-                return;
+                deviceSignature = signature;
+                deviceCards.Children.Clear();
+                finishSlot.Children.Clear();
+                finishModel = null;
+                if (d == null)
+                {
+                    deviceCards.Children.Add(Ui.Secondary(Loc.T("연결하면 이름, 모델, 펌웨어가 표시됩니다.", "The name, model and firmware appear once connected.", "接続すると名前、モデル、ファームウェアが表示されます。")));
+                    return;
+                }
+                deviceCards.Children.Add(Ui.Card(Glyphs.Speaker, d.Name, d.Model, null));
+                if (!KefModels.Names.Contains(d.Model)) deviceCards.Children.Add(ModelCard());
+                deviceCards.Children.Add(finishSlot);
+                deviceCards.Children.Add(Ui.Card(Glyphs.Info, Loc.T("펌웨어", "Firmware", "ファームウェア"), d.Firmware, null));
             }
-            deviceCards.Children.Add(Ui.Card(Glyphs.Speaker, d.Name, d.Model, null));
-            deviceCards.Children.Add(FinishCard(d.Model));
-            deviceCards.Children.Add(Ui.Card(Glyphs.Info, Loc.T("펌웨어", "Firmware", "ファームウェア"), d.Firmware, null));
+            // The finish list follows the picked model without rebuilding the model list above it.
+            if (d != null && (finishSlot.Children.Count == 0 || host.ShownModel != finishModel))
+            {
+                finishModel = host.ShownModel;
+                finishSlot.Children.Clear();
+                finishSlot.Children.Add(FinishCard(finishModel));
+            }
         }
         return (panel, Refresh);
     }
 
+    /// <summary>
+    /// For a speaker that reports a model the app does not know: the model to draw it as and list finishes for.
+    /// The inputs stay those of the reported model, so a wrong pick never hides an input the speaker has.
+    /// </summary>
+    Border ModelCard()
+    {
+        var models = KefModels.Names;
+        var box = new ComboBox { MinWidth = 200 };
+        box.Items.Add(GlyphItem(Ui.AppGlyph(20), Loc.T("고르지 않음", "None", "選択しない")));
+        foreach (var m in models) box.Items.Add(GlyphItem(Ui.AppGlyph(20, null, m), m));
+        box.SelectedIndex = host.PickedModel is string picked && models.Contains(picked) ? models.ToList().IndexOf(picked) + 1 : 0;
+        box.SelectionChanged += (_, _) =>
+        {
+            if (updating) return;
+            host.PickedModel = box.SelectedIndex > 0 ? models[box.SelectedIndex - 1] : null;
+            host.SaveSettings();
+        };
+        return Ui.Card(Glyphs.Speaker, Loc.T("스피커 모델", "Speaker model", "スピーカーのモデル"), Loc.T("앱이 아직 모르는 모델입니다. 플라이아웃 그림과 색상 목록에 쓸 모델을 고르세요. 입력 목록은 바뀌지 않습니다.", "The app doesn't know this model yet. Pick the model to use for the flyout drawing and the finish list. The inputs stay as they are.", "アプリがまだ知らないモデルです。フライアウトの絵とカラーの一覧に使うモデルを選んでください。入力の一覧は変わりません。"), box);
+    }
+
     /// <summary>The finish the flyout draws the speaker in. Speakers do not report it, so the user picks it.</summary>
-    Border FinishCard(string model)
+    Border FinishCard(string? model)
     {
         var finishes = KefFinishes.For(model);
-        bool otherModels = finishes.Any(f => f.Model != model);
         var box = new ComboBox { MinWidth = 200 };
-        box.Items.Add(FinishItem(null, Loc.T("앱 기본 색상", "App default", "アプリの既定")));
-        foreach (var f in finishes) box.Items.Add(FinishItem(f, otherModels ? $"{f.Model} {f.Name}" : f.Name));
+        box.Items.Add(GlyphItem(Ui.AppGlyph(20, null, model), Loc.T("앱 기본 색상", "App default", "アプリの既定")));
+        foreach (var f in finishes) box.Items.Add(GlyphItem(Ui.AppGlyph(20, f), f.Name));
         var current = KefFinishes.Find(host.Settings.SpeakerFinish, model);
         box.SelectedIndex = current == null ? 0 : finishes.ToList().IndexOf(current) + 1;
         box.SelectionChanged += (_, _) =>
@@ -317,8 +350,8 @@ sealed class SettingsView
         return Ui.Card(Glyphs.Color, Loc.T("스피커 색상", "Speaker finish", "スピーカーのカラー"), Loc.T("플라이아웃의 스피커 그림을 이 색으로 그립니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.", "The flyout draws the speaker in this finish. Speakers don't report their color, so pick it here.", "フライアウトのスピーカーの絵をこの色で描きます。スピーカーは色を知らせないため、ここで選びます。"), box);
     }
 
-    static StackPanel FinishItem(KefFinish? finish, string name) =>
-        Ui.Row(10, Ui.AppGlyph(20, finish), new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
+    static StackPanel GlyphItem(UIElement glyph, string name) =>
+        Ui.Row(10, glyph, new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
 
     // ---------- Volume ----------
 

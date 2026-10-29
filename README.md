@@ -30,7 +30,7 @@ The builds aren't signed, so each system asks once on first launch.
 
 Then enter the speaker's IP address in Settings. More in the [User guide](docs/guide.md#getting-started).
 
-Tested on the KEF LSX II LT. The LSX II, LS50 Wireless II, LS60 and XIO use the same protocol but haven't been tested yet.
+Tested on the KEF LSX II LT. The LSX II, LS50 Wireless II, LS60, XIO and LS LUXE use the same protocol but haven't been tested yet.
 
 ## Thanks
 

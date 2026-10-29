@@ -93,6 +93,7 @@ sealed class FlyoutView
     PointInt32 anchor;
     string tileSignature = "", keysSignature = "";
     KefFinish? shownFinish;
+    string? shownModel;
     SizeInt32 lastClientSize;
 
     public bool IsVisible { get; private set; }
@@ -365,11 +366,13 @@ sealed class FlyoutView
                 subtitle.Style = Ui.Style(SpeakerPresentation.SubtitleIsError(c, configured) || setupError ? "KefCriticalText" : "KefSecondaryText");
                 subtitle.FontWeight = FontWeights.Normal;
             }
-            var finish = KefFinishes.Find(host.Settings.SpeakerFinish, c.Device?.Model);
-            if (finish != shownFinish)
+            var finish = host.Finish;
+            string? model = host.ShownModel;
+            if (finish != shownFinish || model != shownModel)
             {
                 shownFinish = finish;
-                appIcon.Child = Ui.AppGlyph(26, finish);
+                shownModel = model;
+                appIcon.Child = Ui.AppGlyph(26, finish, model);
             }
             appIcon.Opacity = phase is SpeakerPhase.On or SpeakerPhase.Standby ? 1 : 0.6;
 

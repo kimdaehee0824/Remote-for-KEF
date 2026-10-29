@@ -110,9 +110,25 @@ public class KefW2DriverTests
     [InlineData("SP4077", "LSXIILT_V2186", "LSX II LT")]
     [InlineData("LS50WII", "LS50W2_V30", "LS50 Wireless II")]
     [InlineData("LS60W", "", "LS60 Wireless")]
+    [InlineData("SP4041", "", "LSX II")]
+    [InlineData("SP4042", "LSLUXE_V100", "LS LUXE")]
     [InlineData("SP9999", "NEWMODEL_V10", "KEF NEWMODEL")]
     public void ResolvesModels(string modelName, string release, string expected) =>
         Assert.Equal(expected, KefModels.Resolve(modelName, release).DisplayName);
+
+    [Fact]
+    public void LsLuxeHasNoUsbInput() =>
+        Assert.Equal(["wifi", "bluetooth", "tv", "optical", "coaxial", "analog"], KefModels.Resolve("SP4042", "").Sources);
+
+    [Theory]
+    [InlineData("LSX II LT", "LS50 Wireless II", "LSX II LT")]
+    [InlineData("KEF SP4099", "LS50 Wireless II", "LS50 Wireless II")]
+    [InlineData("KEF SP4099", null, "KEF SP4099")]
+    [InlineData("KEF SP4099", "KEF LS30", "KEF SP4099")]
+    [InlineData(null, "LS LUXE", "LS LUXE")]
+    [InlineData(null, null, null)]
+    public void ReportedModelWinsOverThePickedOne(string? reported, string? picked, string? shown) =>
+        Assert.Equal(shown, KefModels.Shown(reported, picked));
 
     [Fact]
     public void RejectsPublicAddress() =>

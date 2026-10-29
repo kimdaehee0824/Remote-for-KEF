@@ -15,9 +15,29 @@ public struct KefFinish: Sendable, Equatable, Identifiable {
     /// Outline of the cabinet, lighter than a dark cabinet and darker than a light one, so the
     /// speaker keeps its shape on a background of a similar color (a dark speaker in dark mode).
     public var edge: UInt32 {
-        let dark = Self.luminance(cabinet) < 0.5
-        return Self.mix(cabinet, dark ? 0xFFFFFF : 0, dark ? 0.35 : 0.18)
+        Self.mix(cabinet, dark ? 0xFFFFFF : 0, dark ? 0.35 : 0.18)
     }
+
+    /// The color of a part of the speaker drawing (`KefShape`). The shades are mixed from the cabinet.
+    public func color(_ paint: KefPaint) -> UInt32 {
+        switch paint {
+        case .cabinet: cabinet
+        case .edge: edge
+        case .trim: trim
+        case .cone: cone
+        case .tweeter: tweeter
+        // LSX II fabric wrap, set off from the cabinet-colored front a little.
+        case .fabric: Self.mix(cabinet, dark ? 0xFFFFFF : 0, dark ? 0.12 : 0.1)
+        // The gap between the LSX II fabric and its front.
+        case .seam: Self.mix(cabinet, 0, dark ? 0.45 : 0.35)
+        // LS60 plinth, halfway to the outline.
+        case .plinth: Self.mix(cabinet, edge, 0.5)
+        // XIO top face, lit from above.
+        case .top: Self.mix(cabinet, 0xFFFFFF, dark ? 0.16 : 0.3)
+        }
+    }
+
+    private var dark: Bool { Self.luminance(cabinet) < 0.5 }
 
     private static func component(_ rgb: UInt32, _ shift: UInt32) -> Double {
         Double((rgb >> shift) & 0xFF)
@@ -60,7 +80,7 @@ extension KefFinish {
         KefFinish(id: "lsx-ii/lava-red", model: "LSX II", name: "Lava Red", cabinet: 0x831412, trim: 0x323538, cone: 0x962B2B, tweeter: 0x721F1F),
 
         // LS50 Wireless II. Titanium Grey and Crimson Red are no longer sold.
-        KefFinish(id: "ls50-wireless-ii/carbon-black", model: "LS50 Wireless II", name: "Carbon Black", cabinet: 0x4C5051, trim: 0x464645, cone: 0xA97051, tweeter: 0x81472B),
+        KefFinish(id: "ls50-wireless-ii/carbon-black", model: "LS50 Wireless II", name: "Carbon Black", cabinet: 0x4C5051, trim: 0x2E2E2E, cone: 0xA97051, tweeter: 0x81472B),
         KefFinish(id: "ls50-wireless-ii/mineral-white", model: "LS50 Wireless II", name: "Mineral White", cabinet: 0xEFEDE5, trim: 0x4D4B49, cone: 0xA97051, tweeter: 0x81472B),
         KefFinish(id: "ls50-wireless-ii/sand-shell", model: "LS50 Wireless II", name: "Sand Shell", cabinet: 0xD9CFC5, trim: 0x434040, cone: 0xD0B29B, tweeter: 0xA98564),
         KefFinish(id: "ls50-wireless-ii/moss-green", model: "LS50 Wireless II", name: "Moss Green", cabinet: 0x5D6B5C, trim: 0x423F3F, cone: 0xD0B29A, tweeter: 0xA98664),
@@ -73,6 +93,11 @@ extension KefFinish {
         KefFinish(id: "ls60-wireless/titanium-grey", model: "LS60 Wireless", name: "Titanium Grey", cabinet: 0x6F6E6D, trim: 0x26292C, cone: 0xC4A385, tweeter: 0xA98758),
         KefFinish(id: "ls60-wireless/royal-blue", model: "LS60 Wireless", name: "Royal Blue", cabinet: 0x3A527B, trim: 0x25282D, cone: 0xD3B396, tweeter: 0xAA8958),
 
+        // LS LUXE
+        KefFinish(id: "ls-luxe/dusk-titanium", model: "LS LUXE", name: "Dusk Titanium", cabinet: 0xC4B9AB, trim: 0x3B3A38, cone: 0xBFAE97, tweeter: 0x9C7A4A),
+        KefFinish(id: "ls-luxe/eclipse-black", model: "LS LUXE", name: "Eclipse Black", cabinet: 0x2F2F2F, trim: 0x1F1F1E, cone: 0x666262, tweeter: 0x8A6E45),
+        KefFinish(id: "ls-luxe/mineral-white", model: "LS LUXE", name: "Mineral White", cabinet: 0xDADADA, trim: 0x393836, cone: 0xB8B8B6, tweeter: 0xA08455),
+
         // XIO soundbar. Its drivers sit behind the grille, so the icon uses darker shades of it.
         KefFinish(id: "xio/silver-grey", model: "XIO", name: "Silver Grey", cabinet: 0x9F9F97, trim: 0x72726C, cone: 0x888881, tweeter: 0x72726C),
         KefFinish(id: "xio/slate-black", model: "XIO", name: "Slate Black", cabinet: 0x34312C, trim: 0x25231F, cone: 0x2C2A25, tweeter: 0x25231F),
@@ -82,17 +107,16 @@ extension KefFinish {
     /// LS60 Wireless Royal Blue, which sits well next to the default blue accent of macOS and Windows.
     public static let appDefault = all.first { $0.id == "ls60-wireless/royal-blue" }!
 
-    /// The finishes of a model by its display name, or every finish when the model is not in the table.
+    /// The finishes of a model by its display name, none for a model that is not in the table.
     public static func finishes(for model: String?) -> [KefFinish] {
-        let own = all.filter { $0.model == model }
-        return own.isEmpty ? all : own
+        all.filter { $0.model == model }
     }
 
-    /// The saved finish, unless it belongs to another known model (the speaker was replaced).
-    /// Before the model is known the saved finish is used as is.
+    /// The saved finish, unless it belongs to another model (the speaker was replaced, or the app does not know the model).
+    /// Before the speaker is connected the saved finish is used as is.
     public static func find(_ id: String?, model: String?) -> KefFinish? {
         guard let id, !id.isEmpty, let finish = all.first(where: { $0.id == id }) else { return nil }
         guard let model, !model.isEmpty else { return finish }
-        return finishes(for: model).contains(finish) ? finish : nil
+        return finish.model == model ? finish : nil
     }
 }

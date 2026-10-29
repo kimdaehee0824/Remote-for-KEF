@@ -105,18 +105,25 @@ struct SpeakerSettings: View {
                 Section {
                     LabeledContent(loc("이름", "Name", "名前"), value: device.name)
                     LabeledContent(loc("모델", "Model", "モデル"), value: device.model)
-                    FinishPicker(model: device.model)
+                    if !KefModels.names.contains(device.model) {
+                        ModelPicker()
+                    }
+                    FinishPicker(model: model.shownModel)
                     LabeledContent(loc("펌웨어", "Firmware", "ファームウェア"), value: device.firmware)
                     LabeledContent(loc("검증 상태", "Verification", "検証状況"), value: device.verifiedModel ? loc("실기 검증됨", "Tested on a real speaker", "実機で検証済み") : loc("미검증 모델 (공개 코드 기준)", "Unverified model (based on public code)", "未検証のモデル（公開コードに基づく）"))
                 } header: {
                     Text(loc("기기 정보", "Device Info", "機器情報"))
                 } footer: {
-                    Text(wrapping: loc("색상은 패널의 스피커 그림에 쓰입니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.", "The finish is used for the speaker in the panel. Speakers don't report their color, so pick it here.", "カラーはパネルのスピーカーの絵に使われます。スピーカーは色を知らせないため、ここで選びます。"))
+                    if KefModels.names.contains(device.model) {
+                        Text(wrapping: loc("색상은 패널의 스피커 그림에 쓰입니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.", "The finish is used for the speaker in the panel. Speakers don't report their color, so pick it here.", "カラーはパネルのスピーカーの絵に使われます。スピーカーは色を知らせないため、ここで選びます。"))
+                    } else {
+                        Text(wrapping: loc("앱이 아직 모르는 모델입니다. 고른 모델은 패널의 스피커 그림과 색상 목록에만 쓰고, 입력 목록은 바꾸지 않습니다. 색상은 스피커가 알려 주지 않아 직접 고릅니다.", "The app doesn't know this model yet. The model you pick is used only for the speaker in the panel and the finish list; the inputs stay as they are. Speakers don't report their color, so pick it here.", "アプリがまだ知らないモデルです。選んだモデルはパネルのスピーカーの絵とカラーの一覧にだけ使い、入力の一覧は変えません。スピーカーは色を知らせないため、カラーはここで選びます。"))
+                    }
                 }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: controller.device == nil ? 300 : 540)
+        .frame(width: 500, height: controller.device.map { KefModels.names.contains($0.model) ? CGFloat(540) : 600 } ?? 300)
         .onAppear {
             hostDraft = model.host
             passwordDraft = ""
@@ -143,25 +150,49 @@ struct SpeakerSettings: View {
     }
 }
 
-/// The finish the panel draws the speaker in. Lists the connected model's finishes,
-/// or every finish when the model is not in the table.
-private struct FinishPicker: View {
+/// For a speaker that reports a model the app does not know: the model to draw it as and list finishes for.
+/// The inputs stay those of the reported model, so a wrong pick never hides an input the speaker has.
+private struct ModelPicker: View {
     @Environment(AppModel.self) private var appModel
-    let model: String
 
     var body: some View {
-        let finishes = KefFinish.finishes(for: model)
-        let otherModels = finishes.contains { $0.model != model }
+        Picker(loc("모델 선택", "Choose Model", "モデルを選択"), selection: Binding(get: { appModel.pickedModel }, set: { appModel.pickedModel = $0 })) {
+            Label {
+                Text(loc("고르지 않음", "None", "選択しない"))
+            } icon: {
+                Image(nsImage: SpeakerArt.image(nil, size: 16))
+            }
+            .tag(String?.none)
+            Divider()
+            ForEach(KefModels.names, id: \.self) { name in
+                Label {
+                    Text(name)
+                } icon: {
+                    Image(nsImage: SpeakerArt.image(nil, model: name, size: 16))
+                }
+                .tag(Optional(name))
+            }
+        }
+    }
+}
+
+/// The finish the panel draws the speaker in. Lists the shown model's finishes;
+/// only the app's own colors before the model is known.
+private struct FinishPicker: View {
+    @Environment(AppModel.self) private var appModel
+    let model: String?
+
+    var body: some View {
         Picker(loc("색상", "Finish", "カラー"), selection: Binding(get: { appModel.speakerFinish?.id }, set: { appModel.speakerFinishID = $0 })) {
             Label {
                 Text(loc("앱 기본", "App default", "アプリの既定"))
             } icon: {
-                Image(nsImage: SpeakerArt.image(.appDefault, size: 16))
+                Image(nsImage: SpeakerArt.image(nil, model: model, size: 16))
             }
             .tag(String?.none)
-            ForEach(finishes) { finish in
+            ForEach(KefFinish.finishes(for: model)) { finish in
                 Label {
-                    Text(otherModels ? "\(finish.model) \(finish.name)" : finish.name)
+                    Text(finish.name)
                 } icon: {
                     Image(nsImage: SpeakerArt.image(finish, size: 16))
                 }

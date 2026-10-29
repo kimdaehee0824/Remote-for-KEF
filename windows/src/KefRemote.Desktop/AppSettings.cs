@@ -25,6 +25,12 @@ public sealed class AppSettings
     /// <summary>Finish the speaker icon is drawn in (KefFinish.Id), or null for the app's own colours.</summary>
     public string? SpeakerFinish { get; set; }
 
+    /// <summary>
+    /// Model picked per speaker address, for a speaker that reports a model the app does not know.
+    /// Only the drawing and the finish list use it.
+    /// </summary>
+    public Dictionary<string, string> SpeakerModels { get; set; } = [];
+
     /// <summary>The one-time notice that closing the settings window keeps the app in the tray was shown.</summary>
     public bool TrayNoticeShown { get; set; }
 
