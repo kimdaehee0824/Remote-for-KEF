@@ -91,6 +91,13 @@ static class SelfTest
             var (window, content) = host.Flyout.Heights;
             Expect(Math.Abs(window - content) <= 2, $"flyout window {window:0.#} tall for content {content:0.#}");
         });
+        // Same breathing room above the header as at the sides (16 DIPs).
+        await Step("flyout top margin", () =>
+        {
+            double top = host.Flyout.IconTop;
+            Expect(top >= 14, $"app icon {top:0.#} below the top of the flyout");
+            return Task.CompletedTask;
+        });
         await Step("volume within limit", async () =>
         {
             await WaitFor(() => !c.Busy, "idle");

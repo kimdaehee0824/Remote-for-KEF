@@ -95,8 +95,14 @@ sealed class FlyoutView
     public bool IsVisible { get; private set; }
     public event Action? VisibilityChanged;
 
-    /// <summary>The window content, for self-test captures.</summary>
-    public FrameworkElement Root => root;
+    /// <summary>
+    /// The window content with its background, for self-test captures. The stack itself has no
+    /// background, and RenderTargetBitmap leaves out its empty top band.
+    /// </summary>
+    public FrameworkElement Root => surface;
+
+    /// <summary>Distance from the top of the flyout to the app icon, in DIPs (self-test).</summary>
+    public double IconTop => appIcon.TransformToVisual(root).TransformPoint(default).Y;
 
     /// <summary>Window content height against the content's own height, in DIPs (self-test).</summary>
     public (double Window, double Content) Heights => (surface.ActualHeight, Math.Max(root.DesiredSize.Height, MinHeight));

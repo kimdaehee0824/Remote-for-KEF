@@ -142,7 +142,7 @@ sealed class SettingsView
             _ => GeneralPage(),
         };
         refreshPage = refresh;
-        var page_ = new StackPanel { Spacing = 4, MaxWidth = 1000, Padding = new Thickness(32, 8, 32, 32), HorizontalAlignment = HorizontalAlignment.Stretch };
+        var page_ = new StackPanel { Spacing = 4, MaxWidth = 1000, Padding = new Thickness(32, 24, 32, 32), HorizontalAlignment = HorizontalAlignment.Stretch };
         page_.Children.Add(content);
         scroller.Content = page_;
         scroller.ChangeView(null, 0, null, true);
