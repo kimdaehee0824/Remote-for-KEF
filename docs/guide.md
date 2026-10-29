@@ -61,11 +61,15 @@ Before turning on, the app checks that the volume is within the limit. If the vo
 
 ### Shortcuts and the volume indicator
 
-<!-- W4 -->
+From any app, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> mutes or unmutes. When the volume changes, an indicator shows briefly in the bottom-right corner of the monitor with the mouse pointer.
 
-- From any app, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> mutes or unmutes.
-- When the volume changes, an indicator shows briefly in the bottom-right corner. The mouse wheel over it changes the volume too.
-- If another app uses the same combination, **Check shortcuts** shows at the bottom of the flyout. VS Code, JetBrains IDEs, Visual Studio and Word use some of these too, so change them in **Settings → Shortcuts** if they clash.
+<p><img src="images/guide/W4-en.png" width="302" alt="Volume indicator"></p>
+
+1. **Speaker icon**: select it to mute or unmute.
+2. **Volume bar**: the tick is the limit. The mouse wheel over the indicator changes the volume too.
+3. **Current volume**
+
+If another app uses the same combination, **Check shortcuts** shows at the bottom of the flyout. VS Code, JetBrains IDEs, Visual Studio and Word use some of these too, so change them in **Settings → Shortcuts** if they clash.
 
 ### Settings: General
 
@@ -97,12 +101,13 @@ Before turning on, the app checks that the volume is within the limit. If the vo
 
 ### Settings: Shortcuts
 
-<!-- W8 -->
+<p><img src="images/guide/W8-en.png" width="760" alt="Shortcuts page in Settings"></p>
 
-1. **Shortcut list**: select a box and press the new combination. <kbd>Esc</kbd> cancels, <kbd>Backspace</kbd> turns it off.
-2. **Volume per press**: 1, 2, 3 or 5, or **Perceived loudness**. It applies to the shortcuts and to the mouse wheel on the indicator.
-3. **Show in the bottom-right corner when the volume changes**: errors such as connection problems or the limit still show when this is off.
-4. **Restore defaults**
+1. **Volume up**, **Volume down**: select a box and press the new combination. <kbd>Esc</kbd> cancels, <kbd>Backspace</kbd> turns it off.
+2. **Mute / unmute**: the picture shows what happens when another app already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>. If you see red text like this, choose another combination.
+3. **Restore defaults**: puts the three shortcuts back to their original combinations.
+4. **Volume per press**: 1, 2, 3 or 5, or **Perceived loudness**. It applies to the shortcuts and to the mouse wheel on the indicator.
+5. **Show in the bottom-right corner when the volume changes**: errors such as connection problems or the limit still show when this is off.
 
 **Perceived loudness** follows measured steps (12, 15, 19, 22, 25, 29 …) so the loudness, not the number, rises evenly. Above 65 it moves by 4; below 12, raising goes to 12 and lowering goes to 0.
 
