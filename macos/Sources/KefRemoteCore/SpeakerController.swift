@@ -9,6 +9,9 @@ import Observation
 ///   connection and reconnects read-only.
 /// - A connection loss, an external input change or a settings change
 ///   invalidates queued commands. Nothing is replayed after reconnecting.
+/// - One failed status read keeps the last state and is retried a second
+///   later; the second in a row shows the speaker as offline. Starting or
+///   waking retries a few times before showing offline.
 @MainActor
 @Observable
 public final class SpeakerController {
@@ -99,18 +102,23 @@ public final class SpeakerController {
         let message: String
     }
 
-    private var driver: (any SpeakerDriver)?
+    // Bookkeeping, not state shown on screen. Ignored by observation so it
+    // never makes a view draw again.
+    @ObservationIgnored private var driver: (any SpeakerDriver)?
     /// Bumped whenever earlier reads or intents must no longer be trusted.
-    private var generation = 0
+    @ObservationIgnored private var generation = 0
     /// Bumped whenever a command applies a read, so an older poll cannot
     /// overwrite it.
-    private var stateEpoch = 0
-    private var queued: Job?
-    private var failures = 0
-    private var suspended = false
-    private var monitorTask: Task<Void, Never>?
+    @ObservationIgnored private var stateEpoch = 0
+    @ObservationIgnored private var queued: Job?
+    /// Failed connection attempts in a row.
+    @ObservationIgnored private var failures = 0
+    /// Failed status reads in a row while online.
+    @ObservationIgnored private var missedPolls = 0
+    @ObservationIgnored private var suspended = false
+    @ObservationIgnored private var monitorTask: Task<Void, Never>?
     /// Internal so tests can wait for queued commands to finish.
-    private(set) var drainTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var drainTask: Task<Void, Never>?
     private let sleep: @Sendable (Duration) async throws -> Void
 
     let verifyAttempts = 4
@@ -119,6 +127,14 @@ public final class SpeakerController {
     let powerVerifyDelay: Duration = .milliseconds(500)
     /// How long the overshoot value is held before the target is written.
     let approachHold: Duration = .milliseconds(100)
+    /// A status read that fails once while online is retried before the
+    /// speaker is shown as offline. A slow reply is not a lost connection.
+    let toleratedMissedPolls = 1
+    /// Attempts while starting or waking before the speaker is shown as
+    /// offline. The network often comes up a few seconds after login or wake.
+    let connectAttempts = 4
+    /// Delay between those retries.
+    let quickRetry: Duration = .seconds(1)
 
     public init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.sleep = sleep
@@ -129,19 +145,20 @@ public final class SpeakerController {
     /// Replaces the driver and connects read-only.
     public func connect(_ driver: any SpeakerDriver) async {
         self.driver = driver
-        device = nil
-        snapshot = nil
+        update(\.device, nil)
+        update(\.snapshot, nil)
         failures = 0
-        phase = .connecting
+        missedPolls = 0
+        update(\.phase, .connecting)
         await reconnect()
     }
 
     public func disconnect() {
         invalidate()
         driver = nil
-        device = nil
-        snapshot = nil
-        phase = .idle
+        update(\.device, nil)
+        update(\.snapshot, nil)
+        update(\.phase, .idle)
     }
 
     /// For system sleep. Stops polling and drops queued commands.
@@ -154,6 +171,7 @@ public final class SpeakerController {
     public func resume() {
         suspended = false
         failures = 0
+        missedPolls = 0
         if driver != nil, phase == .online { phase = .connecting }
     }
 
@@ -174,9 +192,14 @@ public final class SpeakerController {
             }
             apply(state)
             failures = 0
+            missedPolls = 0
             return true
         } catch {
             guard token == generation else { return false }
+            missedPolls += 1
+            // Polls only read, and every command reads again before it writes,
+            // so keeping the last state through one slow reply is safe.
+            if missedPolls <= toleratedMissedPolls { return false }
             goOffline("연결 확인 필요: \(describe(error))")
             return false
         }
@@ -188,7 +211,7 @@ public final class SpeakerController {
         guard let driver, phase == .online, !isBusy else { return }
         let token = generation
         guard let info = try? await driver.connect(), token == generation else { return }
-        device = info
+        update(\.device, info)
     }
 
     @discardableResult
@@ -201,15 +224,22 @@ public final class SpeakerController {
             guard token == generation else { return false }
             let state = try await driver.read()
             guard token == generation else { return false }
-            device = info
+            update(\.device, info)
             apply(state)
-            phase = .online
+            update(\.phase, .online)
             failures = 0
+            missedPolls = 0
             return true
         } catch {
             guard token == generation else { return false }
             failures += 1
-            phase = .offline(describe(error))
+            if phase == .connecting {
+                // While starting or waking, keep showing "connecting" for a few quick retries,
+                // then fall back to the regular backoff from its first step.
+                if failures < connectAttempts { return false }
+                failures = 1
+            }
+            update(\.phase, .offline(describe(error)))
             return false
         }
     }
@@ -236,6 +266,8 @@ public final class SpeakerController {
         if await refresh() {
             return isPanelVisible ? .milliseconds(1500) : .seconds(4)
         }
+        // A tolerated missed poll, or a retry while starting or waking.
+        if phase == .online || phase == .connecting { return quickRetry }
         // 2 → 5 → 10 → 30 seconds, without user-facing popups.
         let steps: [Duration] = [.seconds(2), .seconds(5), .seconds(10), .seconds(30)]
         return steps[min(max(failures, 1) - 1, steps.count - 1)]
@@ -499,8 +531,15 @@ public final class SpeakerController {
     }
 
     private func apply(_ state: SpeakerSnapshot) {
-        snapshot = state
-        if state.power == .on, let source = state.sourceId { lastActiveSource = source }
+        update(\.snapshot, state)
+        if state.power == .on, let source = state.sourceId { update(\.lastActiveSource, source) }
+    }
+
+    /// Observation reports every assignment, equal or not. Polls read the same
+    /// state again and again, so unchanged values are not assigned and the
+    /// panel and the menu bar icon only draw again when something changed.
+    private func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<SpeakerController, Value>, _ value: Value) {
+        if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
     }
 
     private func invalidate() {
@@ -512,7 +551,7 @@ public final class SpeakerController {
     private func goOffline(_ message: String) {
         invalidate()
         failures = max(failures, 1)
-        phase = .offline(message)
+        update(\.phase, .offline(message))
     }
 
     private func describe(_ error: any Error) -> String {

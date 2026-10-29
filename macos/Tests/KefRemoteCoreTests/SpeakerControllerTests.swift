@@ -1,3 +1,4 @@
+import Observation
 import Testing
 @testable import KefRemoteCore
 
@@ -86,6 +87,11 @@ final class FakeDriver: SpeakerDriver {
 }
 
 enum FakeError: Error { case offline }
+
+/// Set from observation's change handler.
+final class ChangeFlag: @unchecked Sendable {
+    var value = false
+}
 
 @MainActor
 func connected(_ driver: FakeDriver, limit: Int = 30) async -> SpeakerController {
@@ -473,6 +479,79 @@ struct SpeakerControllerTests {
         controller.wake(to: "usb")
         await settle(controller)
         #expect(driver.writes.isEmpty)
+    }
+
+    @Test func oneMissedPollKeepsTheState() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver)
+        driver.broken = true
+        #expect(await controller.refresh() == false)
+        #expect(controller.phase == .online)
+        #expect(controller.snapshot?.volume == 20)
+        driver.broken = false
+        #expect(await controller.refresh())
+        // The count starts over after a good read: one more miss is still tolerated.
+        driver.broken = true
+        await controller.refresh()
+        #expect(controller.phase == .online)
+        await controller.refresh()
+        if case .offline = controller.phase {} else { Issue.record("expected offline after two missed polls") }
+        #expect(driver.writes.isEmpty)
+    }
+
+    @Test func startupRetriesBeforeShowingOffline() async {
+        let driver = FakeDriver()
+        driver.broken = true
+        let controller = await connected(driver)
+        #expect(controller.phase == .connecting)
+        await controller.refresh()
+        await controller.refresh()
+        #expect(controller.phase == .connecting)
+        await controller.refresh()
+        if case .offline = controller.phase {} else { Issue.record("expected offline after \(controller.connectAttempts) attempts") }
+        driver.broken = false
+        await controller.refresh()
+        #expect(controller.phase == .online)
+        #expect(driver.writes.isEmpty)
+    }
+
+    @Test func wakeFromSleepKeepsTheLastStateWhileRetrying() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver)
+        controller.suspend()
+        controller.resume()
+        driver.broken = true
+        await controller.refresh()
+        #expect(controller.phase == .connecting)
+        #expect(controller.snapshot?.volume == 20)
+        driver.broken = false
+        await controller.refresh()
+        #expect(controller.phase == .online)
+    }
+
+    @Test func unchangedPollsDoNotRedraw() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver)
+        let changed = ChangeFlag()
+        func watch() {
+            changed.value = false
+            withObservationTracking {
+                _ = controller.phase
+                _ = controller.snapshot
+                _ = controller.device
+                _ = controller.lastActiveSource
+            } onChange: {
+                changed.value = true
+            }
+        }
+        watch()
+        await controller.refresh()
+        await controller.refreshDevice()
+        #expect(!changed.value)
+        driver.volume = 21
+        watch()
+        await controller.refresh()
+        #expect(changed.value)
     }
 
     @Test func commandsWhileOfflineAreRefused() async {

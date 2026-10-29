@@ -50,6 +50,10 @@ struct KefW2Client: Sendable {
     let now: @Sendable () -> Date
 
     static let maxResponseBytes = 262_144
+    /// Seconds without data before a request fails. The speaker can answer
+    /// slowly while it streams; one failed status read is retried by the
+    /// controller before it shows the speaker as offline.
+    static let requestTimeout: TimeInterval = 2.5
 
     init(host: String, password: String, transport: any KefTransport, now: @escaping @Sendable () -> Date = { Date() }) throws {
         guard let normalized = Self.validatedHost(host) else { throw KefError.invalidHost }
@@ -129,7 +133,7 @@ struct KefW2Client: Sendable {
         guard let target = URL(string: url) else { throw KefError.invalidHost }
         var request = URLRequest(url: target)
         request.httpMethod = method
-        request.timeoutInterval = 1.4
+        request.timeoutInterval = KefW2Client.requestTimeout
         if let body {
             request.httpBody = Data(body.utf8)
             request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
@@ -180,13 +184,15 @@ public final class URLSessionKefTransport: NSObject, KefTransport, URLSessionTas
 
     public override init() {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 1.4
-        configuration.timeoutIntervalForResource = 3
+        configuration.timeoutIntervalForRequest = KefW2Client.requestTimeout
+        configuration.timeoutIntervalForResource = 5
         configuration.connectionProxyDictionary = [:]
         configuration.httpShouldSetCookies = false
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.httpMaximumConnectionsPerHost = 2
+        // A status read sends four requests at once. With fewer connections the
+        // later ones wait in line, and the wait counts toward their timeout.
+        configuration.httpMaximumConnectionsPerHost = 4
         session = URLSession(configuration: configuration)
         super.init()
     }

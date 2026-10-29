@@ -13,6 +13,14 @@ enum MenuBarGlyph: CaseIterable {
 
     @MainActor private static let images = Dictionary(uniqueKeysWithValues: allCases.map { ($0, $0.makeImage()) })
 
+    /// The filled speaker, faint, while connecting and the state is not known
+    /// yet. Not the slashed offline glyph: nothing has failed. Template images
+    /// keep their alpha, so the system draws it lighter on every menu bar.
+    @MainActor static let connecting: NSImage = render(size: size, template: true) { context in
+        context.setAlpha(0.35)
+        MenuBarGlyph.on.draw(in: context)
+    }
+
     private static let size = CGSize(width: 16, height: 16)
     private static let center = CGPoint(x: 8, y: 8)
 

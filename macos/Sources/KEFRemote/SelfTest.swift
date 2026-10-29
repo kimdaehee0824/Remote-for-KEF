@@ -128,6 +128,9 @@ enum SelfTest {
         }
         await step("offline") {
             speaker.offline = true
+            // One missed poll is tolerated; the second shows the speaker as offline.
+            await controller.refresh()
+            try expect(controller.isOnline, "one missed poll keeps the state")
             await controller.refresh()
             if case .offline = controller.phase {} else { throw Failure(description: "expected offline") }
             try await panel.save(folder, "07-panel-offline.png")
@@ -150,11 +153,13 @@ enum SelfTest {
         return failures == 0
     }
 
-    /// The four glyphs, then the volume at 9 and 25 to show the fixed number width, on light and dark bars.
+    /// The volume at 25 and 9 to show the fixed number width, then muted, standby,
+    /// offline and connecting, on dark and light bars.
     private static func saveMenuBarStrip(_ url: URL) throws {
         let items: [NSImage] = [
             MenuBarGlyph.label(.on, volume: 25), MenuBarGlyph.label(.on, volume: 9),
             MenuBarGlyph.muted.image, MenuBarGlyph.standby.image, MenuBarGlyph.offline.image,
+            MenuBarGlyph.connecting,
         ]
         let scale: CGFloat = 2, gap: CGFloat = 14, rowHeight: CGFloat = 24
         let width = items.reduce(gap) { $0 + $1.size.width + gap }
