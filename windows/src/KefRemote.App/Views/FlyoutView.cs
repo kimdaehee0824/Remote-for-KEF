@@ -224,7 +224,9 @@ sealed class FlyoutView
 
     MenuFlyout BuildGearMenu()
     {
-        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight, ShouldConstrainToRootBounds = true };
+        // In its own popup window. The menu's background is the acrylic backdrop of that window (the presenter itself
+        // is transparent), so drawn inside the flyout window it had none and the tiles showed through.
+        var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight, ShouldConstrainToRootBounds = false };
         var settings = new MenuFlyoutItem { Text = Loc.T("설정", "Settings", "設定"), Icon = new FontIcon { Glyph = Glyphs.Settings } };
         settings.Click += (_, _) => host.OpenSettings(SettingsPage.General);
         var about = new MenuFlyoutItem { Text = Loc.T("정보", "About", "バージョン情報"), Icon = new FontIcon { Glyph = Glyphs.Info } };
