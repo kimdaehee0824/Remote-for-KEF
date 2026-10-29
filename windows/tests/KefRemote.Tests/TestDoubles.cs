@@ -43,8 +43,13 @@ sealed class FakeDriver : ISpeakerDriver
         AdvancePower();
         if (Gate != null) await Gate.Task;
         if (Broken) throw new HttpRequestException("offline");
-        return new SpeakerState { Power = Power, SourceId = Power == PowerState.Standby ? null : Source, Volume = Volume, Muted = Muted, Valid = true };
+        bool waking = Power == PowerState.On && WakingReads > 0;
+        if (waking) WakingReads--;
+        return new SpeakerState { Power = waking ? PowerState.Standby : Power, SourceId = Power == PowerState.Standby ? null : Source, Volume = Volume, Muted = Muted, Valid = true };
     }
+
+    /// <summary>Reads that show the input back but the power status still in standby, like the W2 firmware waking.</summary>
+    public int WakingReads, WakingReadsAfterPowerOn;
 
     public readonly List<int> VolumeWrites = [];
     public Func<int, int, int?>? Overshoot;
@@ -66,6 +71,7 @@ sealed class FakeDriver : ISpeakerDriver
         if (IgnoreWrites) return Task.CompletedTask;
         if (PowerLagReads > 0) pendingPower = on ? PowerState.On : PowerState.Standby;
         else Power = on ? PowerState.On : PowerState.Standby;
+        if (on) WakingReads = WakingReadsAfterPowerOn;
         return Task.CompletedTask;
     }
 

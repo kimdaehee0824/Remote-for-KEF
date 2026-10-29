@@ -60,6 +60,22 @@ public class KefW2DriverTests
         Assert.Equal((PowerState.On, "usb"), (on.Power, on.SourceId));
     }
 
+    [Theory]
+    // Measured on LSX II LT: the input setting changes about 2 s before the power status when waking
+    // and about 0.4 s before it when turning off.
+    [InlineData("usb", "standby", PowerState.Standby, "usb")]
+    [InlineData("standby", "powerOn", PowerState.Standby, null)]
+    [InlineData("powerOn", "powerOn", PowerState.On, null)]
+    public async Task InputSettingLeadsThePowerStatus(string source, string status, PowerState power, string? input)
+    {
+        var device = new FakeKefDevice();
+        using var driver = Driver(device);
+        await driver.ConnectAsync();
+        (device.Source, device.Power) = (source, status);
+        var s = await driver.ReadAsync();
+        Assert.Equal((power, input), (s.Power, s.SourceId));
+    }
+
     [Fact]
     public async Task OvershootOnlyWhenRaising()
     {

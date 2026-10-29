@@ -94,12 +94,17 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
         string second = KefW2Protocol.ReadString(await GetDataAsync(SourcePath, ct));
         if (first != second) throw new SpeakerException(Loc.T("입력 전환 중입니다", "The input is switching", "入力を切り替え中です"));
 
+        // The input setting changes before the power status both ways (measured on LSX II LT): "standby" about
+        // 0.4 s earlier when turning off, the input about 2 s earlier when waking. Waking therefore reads as
+        // standby with an input (see SpeakerController.IsWaking).
         string status = KefW2Protocol.ReadString(power.Result);
-        var powerState = status switch { "powerOn" => PowerState.On, "standby" => PowerState.Standby, _ => PowerState.Unknown };
+        var powerState = second == "standby" ? PowerState.Standby
+            : status switch { "powerOn" => PowerState.On, "standby" => PowerState.Standby, _ => PowerState.Unknown };
         return new SpeakerState
         {
             Power = powerState,
-            SourceId = second == "standby" ? null : second,
+            // Only an input of this model counts, as on macOS.
+            SourceId = Model?.Sources.Contains(second) == true ? second : null,
             Volume = KefW2Protocol.ReadInt(volume.Result),
             Muted = KefW2Protocol.ReadBool(mute.Result),
             Valid = true,

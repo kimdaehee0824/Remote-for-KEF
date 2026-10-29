@@ -22,6 +22,7 @@ public static class SpeakerPresentation
     public static string Offline => Loc.T("연결 끊김", "Offline", "オフライン");
     static string Connecting => Loc.T("연결하는 중", "Connecting", "接続中");
     static string SetUp => Loc.T("스피커를 설정하세요", "Set up your speaker", "スピーカーを設定してください");
+    static string TurningOn => Loc.T("켜는 중", "Turning on", "電源を入れています");
 
     public static StatusGlyph Glyph(SpeakerController c) => c.Phase switch
     {
@@ -42,10 +43,11 @@ public static class SpeakerPresentation
                 string label = ShortLabel(SourceLabel(c, c.OperationSource));
                 return Loc.T($"{label}{Korean.Ro(label)} 바꾸는 중", $"Switching to {label}", $"{label}に切り替え中");
             case SpeakerOperation.PowerOn:
-                return Loc.T("켜는 중", "Turning on", "電源を入れています");
+                return TurningOn;
             case SpeakerOperation.PowerOff:
                 return Loc.T("끄는 중", "Turning off", "電源を切っています");
         }
+        if (c.IsWaking) return TurningOn;
         return c.Phase switch
         {
             SpeakerPhase.On => c.Device?.Model ?? "",

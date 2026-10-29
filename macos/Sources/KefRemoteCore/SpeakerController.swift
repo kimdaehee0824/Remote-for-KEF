@@ -57,6 +57,10 @@ public final class SpeakerController {
         VolumePolicy.effectiveLimit(appLimit: appLimit, deviceLimit: device?.deviceVolumeLimit)
     }
     public var isOnline: Bool { phase == .online }
+    /// Coming out of standby: the input is back but the power status, about
+    /// 2 s behind it, still says standby. Commands wait for the power status;
+    /// the panel already shows the input.
+    public var isWaking: Bool { isOnline && snapshot?.power == .standby && snapshot?.sourceId != nil }
     public var isAboveLimit: Bool { (snapshot?.volume ?? 0) > effectiveLimit }
     /// True when the KEF device maximum, not the app limit, is what stops the volume.
     public var limitFromDevice: Bool {
@@ -123,8 +127,10 @@ public final class SpeakerController {
 
     let verifyAttempts = 4
     let verifyDelay: Duration = .milliseconds(180)
-    let powerVerifyAttempts = 10
-    let powerVerifyDelay: Duration = .milliseconds(500)
+    let powerVerifyAttempts = 20
+    let powerVerifyDelay: Duration = .milliseconds(250)
+    /// Poll interval while waking, so the speaker shows as on soon after it says so.
+    let wakingPoll: Duration = .milliseconds(250)
     /// How long the overshoot value is held before the target is written.
     let approachHold: Duration = .milliseconds(100)
     /// A status read that fails once while online is retried before the
@@ -264,6 +270,7 @@ public final class SpeakerController {
         guard driver != nil, !suspended else { return .seconds(1) }
         if isBusy { return .milliseconds(500) }
         if await refresh() {
+            if isWaking { return wakingPoll }
             return isPanelVisible ? .milliseconds(1500) : .seconds(4)
         }
         // A tolerated missed poll, or a retry while starting or waking.

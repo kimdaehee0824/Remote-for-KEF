@@ -61,6 +61,43 @@ public class SpeakerControllerPowerTests
     }
 
     [Fact]
+    public async Task PowerOnShowsTheInputBeforeThePowerStatus()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, WakingReadsAfterPowerOn = 3 };
+        var c = await Connected(f);
+        Assert.Null(c.LastActiveSource);
+        var shown = new List<string?>();
+        c.Changed += () => { if (c.Operation == SpeakerOperation.PowerOn) shown.Add(c.OperationSource); };
+        await c.PowerOnAsync();
+        Assert.Contains("usb", shown);
+        Assert.Equal((SpeakerPhase.On, "usb", 1), (c.Phase, c.State.SourceId, f.Writes));
+        Assert.False(c.IsWaking);
+    }
+
+    [Fact]
+    public async Task WakingElsewhereShowsTheInputAndPollsSooner()
+    {
+        var f = new FakeDriver();
+        var c = await Connected(f);
+        await c.PowerOffAsync();
+        // Woken with the remote: the input is back, the power status follows a moment later.
+        (f.Power, f.WakingReads) = (PowerState.On, 1);
+        now += 1000;
+        await c.PollAsync();
+        Assert.Equal((SpeakerPhase.Standby, "usb"), (c.Phase, c.State.SourceId));
+        Assert.True(c.IsWaking);
+        Assert.False(c.CanPowerOn);
+        Assert.False(c.CanControl);
+        Assert.Equal(TimeSpan.FromMilliseconds(250), c.NextPollDelay(false));
+        now += 250;
+        await c.PollAsync();
+        Assert.Equal(SpeakerPhase.On, c.Phase);
+        Assert.False(c.IsWaking);
+        Assert.Null(c.Notice);
+        Assert.Equal(TimeSpan.FromSeconds(4), c.NextPollDelay(false));
+    }
+
+    [Fact]
     public async Task PowerOnToOtherInputSwitchesMuted()
     {
         var f = new FakeDriver { Power = PowerState.Standby };

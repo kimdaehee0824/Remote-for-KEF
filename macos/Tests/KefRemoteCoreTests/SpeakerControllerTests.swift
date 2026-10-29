@@ -16,6 +16,9 @@ final class FakeDriver: SpeakerDriver {
     /// Reads that fail right after a power change, like a speaker restarting its network.
     var failuresAfterPower = 0
     private var failingReads = 0
+    /// Reads that show the input back but the power status still in standby, like the W2 firmware waking.
+    var wakingReads = 0
+    var wakingReadsAfterPower = 0
     /// Suspends the next read until `release()` is called.
     var holdNextRead = false
     private var held: CheckedContinuation<Void, Never>?
@@ -55,7 +58,9 @@ final class FakeDriver: SpeakerDriver {
             failingReads -= 1
             throw FakeError.offline
         }
-        return SpeakerSnapshot(power: power, sourceId: power == .on ? source : nil, volume: volume, muted: muted)
+        let waking = power == .on && wakingReads > 0
+        if waking { wakingReads -= 1 }
+        return SpeakerSnapshot(power: waking ? .standby : power, sourceId: power == .on ? source : nil, volume: volume, muted: muted)
     }
 
     func setVolume(_ volume: Int) async throws {
@@ -79,6 +84,7 @@ final class FakeDriver: SpeakerDriver {
         writes.append(on ? "power=on" : "standby")
         power = on ? .on : .standby
         failingReads = failuresAfterPower
+        if on { wakingReads = wakingReadsAfterPower }
     }
 
     nonisolated func approachOvershoot(current: Int, target: Int) -> Int? {
@@ -409,6 +415,36 @@ struct SpeakerControllerTests {
         await settle(controller)
         #expect(driver.writes == ["power=on"])
         #expect(controller.snapshot?.sourceId == "usb")
+    }
+
+    @Test func wakeWaitsForThePowerStatus() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.wakingReadsAfterPower = 3
+        let controller = await connected(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["power=on"])
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.snapshot?.sourceId == "usb")
+        #expect(!controller.isWaking)
+    }
+
+    @Test func wakingElsewhereShowsTheInputFirst() async {
+        let driver = FakeDriver()
+        let controller = await connected(driver)
+        controller.standby()
+        await settle(controller)
+        // Woken with the remote: the input is back, the power status follows a moment later.
+        driver.power = .on
+        driver.wakingReads = 1
+        await controller.refresh()
+        #expect(controller.snapshot?.power == .standby)
+        #expect(controller.snapshot?.sourceId == "usb")
+        #expect(controller.isWaking)
+        await controller.refresh()
+        #expect(controller.snapshot?.power == .on)
+        #expect(!controller.isWaking)
     }
 
     @Test func powerChangesTolerateTransientReadErrors() async {

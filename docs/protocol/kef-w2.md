@@ -35,10 +35,10 @@ A response is a one-element array holding a typed object `{"type": T, T: value}`
 | Model code | `settings:/kef/host/modelName` | `string_`, LSX II LT returns `SP4077` | observed |
 | Release text | `settings:/releasetext` | `string_`, e.g. `LSXIILT_V2186` | observed |
 | Auth policy | `settings:/webserver/authMode` | `webserverAuthMode`: `none`, `setData`, `all` | observed `setData` |
-| Input | `settings:/kef/play/physicalSource` | `kefPhysicalSource`: `usb`, `wifi`, `bluetooth`, `tv`, `optical`, `coaxial`, `analog`, `standby` | observed `usb`, `wifi` |
+| Input | `settings:/kef/play/physicalSource` | `kefPhysicalSource`: `usb`, `wifi`, `bluetooth`, `tv`, `optical`, `coaxial`, `analog`, `standby` | observed `usb`, `wifi`, `standby` |
 | Volume | `player:volume` | `i32_`, 0-100 | observed |
 | Mute | `settings:/mediaPlayer/mute` | `bool_` | observed |
-| Power | `settings:/kef/host/speakerStatus` | `kefSpeakerStatus`: `powerOn`, `standby` | observed `powerOn` |
+| Power | `settings:/kef/host/speakerStatus` | `kefSpeakerStatus`: `powerOn`, `standby` | observed `powerOn`, `standby` |
 | Device limit enabled | `settings:/kef/host/volumeLimit` | `bool_` | observed `true` |
 | Device max volume | `settings:/kef/host/maximumVolume` | `i32_` | observed `70` |
 
@@ -87,6 +87,8 @@ If `authMode` cannot be read, or the device answers 401/403, an HTML page, or an
 - Mute survives input switches.
 - Volume changed between two reads without action from this app (another controller). Always re-read before acting.
 - A `usb` reading confirms the speaker's input only. It says nothing about the PC's audio output device.
+- `physicalSource` changes before `speakerStatus` in both directions (firmware 2.1.86, read every 150 ms). Waking, the input comes back about 1.8 s before `speakerStatus` turns `powerOn`. Turning off, `physicalSource` reads `standby` about 0.4 s before `speakerStatus` does. The apps therefore take `physicalSource` `standby` as standby, and an input while `speakerStatus` is still `standby` as waking: the input is shown at once and commands wait for `powerOn`.
+- With `settings:/kef/host/wakeUpSource` at `wakeup_default` the speaker woke on the input it had before standby.
 
 ## Not used
 

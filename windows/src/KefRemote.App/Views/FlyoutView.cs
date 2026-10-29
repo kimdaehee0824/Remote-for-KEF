@@ -349,6 +349,9 @@ sealed class FlyoutView
         bool isConnecting = configured && !offline && !setupError && phase is SpeakerPhase.Connecting or SpeakerPhase.Disconnected;
         var op = c.Operation;
         string? switchingTo = op is SpeakerOperation.Source or SpeakerOperation.PowerOn ? c.OperationSource ?? pendingSource : pendingSource;
+        // Woken with the remote or KEF Connect: the input is back before the power status, shown like a power-on.
+        bool waking = c.IsWaking;
+        if (waking) switchingTo ??= c.State.SourceId;
 
         updating = true;
         try
@@ -381,10 +384,10 @@ sealed class FlyoutView
             {
                 SpeakerOperation.PowerOn => true,
                 SpeakerOperation.PowerOff => false,
-                _ => phase == SpeakerPhase.On,
+                _ => phase == SpeakerPhase.On || waking,
             };
             // A background read does not disable it: the click waits for the read (RunWhenIdle).
-            power.IsEnabled = canPower && phase is SpeakerPhase.On or SpeakerPhase.Standby && op == SpeakerOperation.None;
+            power.IsEnabled = canPower && phase is SpeakerPhase.On or SpeakerPhase.Standby && op == SpeakerOperation.None && !waking;
             power.Opacity = phase is SpeakerPhase.On or SpeakerPhase.Standby ? 1 : 0.4;
 
             // Problems
@@ -521,15 +524,16 @@ sealed class FlyoutView
         if (signature != tileSignature) BuildTiles(sources, signature);
 
         bool busyOp = c.Operation is SpeakerOperation.Source or SpeakerOperation.PowerOn or SpeakerOperation.PowerOff;
+        bool waiting = busyOp || pendingSource != null || c.IsWaking;
         bool canPower = c.Supports(DriverCapabilities.Power);
         foreach (var tile in tileList)
         {
             bool target = switchingTo == tile.Id;
             bool current = !standby && c.State.SourceId == tile.Id;
             tile.Button.IsChecked = switchingTo != null ? target : current;
-            tile.Button.IsEnabled = target || (!busyOp && pendingSource == null && (!standby || canPower));
+            tile.Button.IsEnabled = target || (!waiting && (!standby || canPower));
             // The pressed tile's icon turns into the progress ring while the switch runs.
-            tile.Ring.IsActive = target && (busyOp || pendingSource != null);
+            tile.Ring.IsActive = target && waiting;
             tile.Ring.Visibility = Show(tile.Ring.IsActive);
             tile.Icon.Visibility = Show(!tile.Ring.IsActive);
             tile.LastInputRing.Visibility = Show(standby && switchingTo == null && c.LastActiveSource == tile.Id);

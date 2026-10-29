@@ -228,6 +228,23 @@ struct KefW2DriverTests {
         #expect(state.sourceId == nil)
     }
 
+    /// Measured on LSX II LT: the input setting changes about 2 s before the power status when waking and about
+    /// 0.4 s before it when turning off.
+    @Test func inputSettingLeadsThePowerStatus() async throws {
+        let device = FakeKefDevice()
+        let driver = try makeDriver(device)
+        _ = try await driver.connect()
+        await device.set("settings:/kef/host/speakerStatus", #"[{"type":"kefSpeakerStatus","kefSpeakerStatus":"standby"}]"#)
+        let waking = try await driver.read()
+        #expect(waking.power == .standby)
+        #expect(waking.sourceId == "usb")
+        await device.set("settings:/kef/play/physicalSource", #"[{"type":"kefPhysicalSource","kefPhysicalSource":"standby"}]"#)
+        await device.set("settings:/kef/host/speakerStatus", #"[{"type":"kefSpeakerStatus","kefSpeakerStatus":"powerOn"}]"#)
+        let turningOff = try await driver.read()
+        #expect(turningOff.power == .standby)
+        #expect(turningOff.sourceId == nil)
+    }
+
     @MainActor @Test func controllerEndToEnd() async throws {
         let device = FakeKefDevice()
         await device.set("player:volume", #"[{"type":"i32_","i32_":25}]"#)

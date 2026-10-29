@@ -53,7 +53,8 @@ public sealed class SpeakerController : IDisposable
     public const int ApproachHoldMilliseconds = 100;
 
     const int VerifyAttempts = 4, VerifyDelayMs = 180;
-    const int PowerVerifyAttempts = 16, PowerVerifyDelayMs = 500;
+    const int PowerVerifyAttempts = 32, PowerVerifyDelayMs = 250;
+    const int WakingPollMs = 250;
     static readonly int[] Backoff = [2000, 5000, 10000, 30000];
 
     public static string NotConnected => Loc.T("연결 전", "Not connected", "未接続");
@@ -147,7 +148,13 @@ public sealed class SpeakerController : IDisposable
 
     public bool CanControl => IsReady && !Busy;
 
-    public bool CanPowerOn => IsStandby && !Busy && Supports(DriverCapabilities.Power);
+    /// <summary>
+    /// Coming out of standby: the input is back but the power status, about 2 s behind it, still says standby.
+    /// Commands wait for the power status; the UI already shows the input.
+    /// </summary>
+    public bool IsWaking => IsStandby && State.SourceId != null;
+
+    public bool CanPowerOn => IsStandby && !IsWaking && !Busy && Supports(DriverCapabilities.Power);
 
     public SpeakerPhase Phase
     {
@@ -292,7 +299,7 @@ public sealed class SpeakerController : IDisposable
     /// <summary>Suggested delay before the next poll, with backoff after failures.</summary>
     public TimeSpan NextPollDelay(bool windowVisible) =>
         TimeSpan.FromMilliseconds(failures == 0
-            ? windowVisible ? 1500 : 4000
+            ? IsWaking ? WakingPollMs : windowVisible ? 1500 : 4000
             : Backoff[Math.Min(failures, Backoff.Length) - 1]);
 
     /// <summary>Change the volume relative to the value read right before writing.</summary>
@@ -442,7 +449,16 @@ public sealed class SpeakerController : IDisposable
                     return;
                 }
                 await Driver!.SetPowerAsync(true, cts.Token);
-                await Verify(token, s => s.Active && s.SourceId != null, PowerVerifyAttempts, PowerVerifyDelayMs, tolerateTransient: true);
+                await Verify(token, s =>
+                {
+                    // Show the input the speaker woke on as soon as it is back, before the power status follows.
+                    if (sourceId == null && s.SourceId != null && s.SourceId != OperationSource)
+                    {
+                        OperationSource = s.SourceId;
+                        Notify();
+                    }
+                    return s.Active && s.SourceId != null;
+                }, PowerVerifyAttempts, PowerVerifyDelayMs, tolerateTransient: true);
                 Status = Connected;
             }
             var on = State;

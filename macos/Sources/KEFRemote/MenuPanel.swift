@@ -139,6 +139,7 @@ private struct PanelHeader: View {
             return loc("연결 끊김", "Offline", "オフライン")
         case .online:
             guard let device = c.device else { return "" }
+            if c.isWaking { return loc("켜는 중", "Turning on", "電源を入れています") }
             if c.snapshot?.power == .standby { return loc("대기", "Standby", "スタンバイ") }
             return device.verifiedModel ? device.model : loc("\(device.model) (미검증 모델)", "\(device.model) (unverified model)", "\(device.model)（未検証のモデル）")
         }
@@ -156,7 +157,7 @@ private struct PanelHeader: View {
                 switch c.activity {
                 case .powerOn?: true
                 case .powerOff?: false
-                default: c.isOnline && c.snapshot?.power == .on
+                default: (c.isOnline && c.snapshot?.power == .on) || c.isWaking
                 }
             },
             set: { on in
@@ -166,7 +167,7 @@ private struct PanelHeader: View {
     }
 
     private func canTogglePower(_ c: SpeakerController) -> Bool {
-        c.isOnline && !c.isBusy && c.snapshot != nil && c.device?.capabilities.contains(.power) == true
+        c.isOnline && !c.isBusy && !c.isWaking && c.snapshot != nil && c.device?.capabilities.contains(.power) == true
     }
 }
 
@@ -315,14 +316,16 @@ private struct SourceSection: View {
     var body: some View {
         let controller = model.controller
         let switchingTo = controller.activity.switchingSource
+        // A wake that goes on to switch inputs keeps showing the input it is heading for.
+        let waitingOn = switchingTo ?? controller.activity.wakingSource(last: controller.lastActiveSource)
         VStack(alignment: .leading, spacing: 2) {
             Text(loc("입력", "Input", "入力")).font(.headline).padding(.bottom, 4)
             ForEach(device.sources) { source in
                 SourceRow(
                     source: source,
-                    selected: (switchingTo ?? state.sourceId) == source.id,
-                    inProgress: switchingTo == source.id,
-                    dimmed: switchingTo != nil && switchingTo != source.id,
+                    selected: (waitingOn ?? state.sourceId) == source.id,
+                    inProgress: waitingOn == source.id,
+                    dimmed: waitingOn != nil && waitingOn != source.id,
                     disabled: controller.isBusy
                 ) {
                     controller.selectSource(source.id)
@@ -347,18 +350,21 @@ private struct StandbySection: View {
     var body: some View {
         let controller = model.controller
         let canPower = device.capabilities.contains(.power)
-        let wakingTo = controller.activity.wakingSource(last: controller.lastActiveSource)
+        // The input is back about 2 s before the power status and shows selected from then on. Before that, a wake
+        // started here shows the input the speaker should come back on.
+        let woken = controller.isWaking ? controller.snapshot?.sourceId : nil
+        let wakingTo = controller.activity.wakingSource(last: woken ?? controller.lastActiveSource) ?? woken
         VStack(alignment: .leading, spacing: 2) {
             if device.capabilities.contains(.source), device.sources.count > 1 {
                 Text(loc("이 입력으로 켜기", "Turn on with this input", "この入力で電源を入れる")).font(.headline).padding(.bottom, 4)
                 ForEach(device.sources) { source in
                     SourceRow(
                         source: source,
-                        selected: false,
+                        selected: wakingTo == source.id,
                         detail: controller.lastActiveSource == source.id ? loc("마지막 입력", "Last input", "最後の入力") : nil,
                         inProgress: wakingTo == source.id,
                         dimmed: wakingTo != nil && wakingTo != source.id,
-                        disabled: controller.isBusy || !canPower
+                        disabled: controller.isBusy || !canPower || controller.isWaking
                     ) {
                         controller.wake(to: source.id)
                     }
