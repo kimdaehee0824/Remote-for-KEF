@@ -15,7 +15,9 @@ enum SettingsTab: Hashable {
 @MainActor
 @Observable
 final class AppModel {
-    static let shared = AppModel()
+    static let shared = Demo.isOn
+        ? AppModel(defaults: UserDefaults(suiteName: Demo.suite) ?? .standard, usesKeychain: false)
+        : AppModel()
 
     let controller = SpeakerController()
 

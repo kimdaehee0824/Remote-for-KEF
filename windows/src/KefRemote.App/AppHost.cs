@@ -12,7 +12,8 @@ namespace KefRemote.App;
 /// <param name="SettingsFolder">Where settings.json and the log live.</param>
 /// <param name="CreateDriver">Replaces the built-in drivers (self-test).</param>
 /// <param name="SelfTest">Screens stay open without focus and use solid backgrounds so they can be captured.</param>
-sealed record HostEnvironment(string SettingsFolder, Func<DriverOptions, ISpeakerDriver>? CreateDriver = null, bool SelfTest = false)
+/// <param name="Demo">The flyout stays open without focus, with its real backdrop (--demo).</param>
+sealed record HostEnvironment(string SettingsFolder, Func<DriverOptions, ISpeakerDriver>? CreateDriver = null, bool SelfTest = false, bool Demo = false)
 {
     public static HostEnvironment Default() =>
         new(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KefRemote"));
@@ -56,6 +57,7 @@ sealed class AppHost : IDisposable
     public bool IsConnecting => connecting;
     public bool ConfigurationError => configurationError;
     public bool SelfTest => environment.SelfTest;
+    public bool Demo => environment.Demo;
     public string SettingsFolder => store.Directory;
     public IReadOnlyList<HotkeyBinding> HotkeyBindings => HotkeyBinding.Normalize(Settings.Hotkeys);
     public FlyoutView Flyout => flyout;

@@ -43,6 +43,12 @@ sealed class App : Application, IXamlMetadataProvider
             _ = SelfTest.RunAsync(folder);
             return;
         }
+        if (options.Demo)
+        {
+            host = new AppHost(options with { Background = true }, Demo.CreateEnvironment());
+            _ = Demo.ShowAsync(host);
+            return;
+        }
         host = new AppHost(options);
     }
 

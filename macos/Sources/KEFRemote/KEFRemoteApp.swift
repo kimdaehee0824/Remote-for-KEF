@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let passed = await SelfTest.run(in: folder)
                 exit(passed ? 0 : 1)
             }
+        } else if Demo.isOn {
+            Demo.start(AppModel.shared)
         } else {
             AppModel.shared.start()
         }

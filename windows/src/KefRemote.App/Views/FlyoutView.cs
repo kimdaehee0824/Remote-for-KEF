@@ -292,7 +292,7 @@ sealed class FlyoutView
 
     void OnActivated(object sender, WindowActivatedEventArgs e)
     {
-        if (e.WindowActivationState != WindowActivationState.Deactivated || !IsVisible || host.SelfTest) return;
+        if (e.WindowActivationState != WindowActivationState.Deactivated || !IsVisible || host.SelfTest || host.Demo) return;
         if (WindowHelpers.OwnsForeground(hwnd)) return; // our own menu or tooltip
         Hide();
     }
