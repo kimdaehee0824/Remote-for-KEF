@@ -29,7 +29,7 @@ open "build/Remote for KEF.app"
 
 `scripts/build-app.sh --universal` builds for Apple silicon and Intel. You can also open `Package.swift` in Xcode and run the `KEFRemote` scheme. Run as a bare executable, launch at login is unavailable because it needs an app bundle.
 
-**App icon**: save the Icon Composer file as `Resources/AppIcon.icon`. `build-app.sh` compiles it with `actool` (Xcode 26) into the bundle; without Xcode the app builds with the generic icon and says so.
+**App icon**: `Resources/AppIcon.icon` is the Icon Composer file (the same speaker as the Windows icon, in LS60 Royal Blue). `build-app.sh` compiles it with `actool` (Xcode 26) into the bundle; without Xcode the app builds with the generic icon and says so, and CI fails in that case.
 
 **Self-test**: `"build/Remote for KEF.app/Contents/MacOS/KEFRemote" --self-test <folder>` drives the real panel and settings against a simulated LSX II LT, saves a PNG of each state and `report.txt`, and exits with 0 only if every step passed. CI runs it on each push. The captures are drawn offscreen without screen recording permission, so system materials such as Liquid Glass do not appear in them.
 
