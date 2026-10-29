@@ -22,6 +22,9 @@ public sealed class AppSettings
     /// <summary>Raise the volume through a short overshoot so it sounds the same as when lowered to it.</summary>
     public bool ApproachFromAbove { get; set; }
 
+    /// <summary>Finish the speaker icon is drawn in (KefFinish.Id), or null for the app's own colours.</summary>
+    public string? SpeakerFinish { get; set; }
+
     /// <summary>The one-time notice that closing the settings window keeps the app in the tray was shown.</summary>
     public bool TrayNoticeShown { get; set; }
 

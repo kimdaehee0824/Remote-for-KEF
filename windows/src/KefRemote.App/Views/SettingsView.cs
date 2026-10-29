@@ -4,6 +4,7 @@ using KefRemote.App.Controls;
 using KefRemote.App.Native;
 using KefRemote.Core;
 using KefRemote.Desktop;
+using KefRemote.Drivers.Kef;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
@@ -290,10 +291,33 @@ sealed class SettingsView
                 return;
             }
             deviceCards.Children.Add(Ui.Card(Glyphs.Speaker, d.Name, d.Model, null));
+            deviceCards.Children.Add(FinishCard(d.Model));
             deviceCards.Children.Add(Ui.Card(Glyphs.Info, "펌웨어", d.Firmware, null));
         }
         return (panel, Refresh);
     }
+
+    /// <summary>The finish the flyout draws the speaker in. Speakers do not report it, so the user picks it.</summary>
+    Border FinishCard(string model)
+    {
+        var finishes = KefFinishes.For(model);
+        bool otherModels = finishes.Any(f => f.Model != model);
+        var box = new ComboBox { MinWidth = 200 };
+        box.Items.Add(FinishItem(null, "앱 기본 색상"));
+        foreach (var f in finishes) box.Items.Add(FinishItem(f, otherModels ? $"{f.Model} {f.Name}" : f.Name));
+        var current = KefFinishes.Find(host.Settings.SpeakerFinish, model);
+        box.SelectedIndex = current == null ? 0 : finishes.ToList().IndexOf(current) + 1;
+        box.SelectionChanged += (_, _) =>
+        {
+            if (updating) return;
+            host.Settings.SpeakerFinish = box.SelectedIndex > 0 ? finishes[box.SelectedIndex - 1].Id : null;
+            host.SaveSettings();
+        };
+        return Ui.Card(Glyphs.Color, "스피커 색상", "플라이아웃의 스피커 그림을 이 색으로 그립니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.", box);
+    }
+
+    static StackPanel FinishItem(KefFinish? finish, string name) =>
+        Ui.Row(10, Ui.AppGlyph(20, finish), new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
 
     // ---------- 음량 ----------
 

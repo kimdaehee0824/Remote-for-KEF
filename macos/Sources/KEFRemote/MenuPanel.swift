@@ -93,12 +93,22 @@ private struct PanelHeader: View {
         let controller = model.controller
         let isOn = controller.isOnline && controller.snapshot?.power == .on
         HStack(spacing: 10) {
-            Image(nsImage: MenuBarGlyph.on.image)
-                .renderingMode(.template)
-                .foregroundStyle(isOn ? Color.white : Color.secondary)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(isOn ? Color.accentColor : Color.secondary.opacity(0.18)))
-                .accessibilityHidden(true)
+            Group {
+                if let finish = model.speakerFinish {
+                    // The speaker in the finish picked in settings, dimmed while it is not on.
+                    Image(nsImage: SpeakerArt.image(finish, size: 24))
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.secondary.opacity(0.12)))
+                        .opacity(isOn ? 1 : 0.6)
+                } else {
+                    Image(nsImage: MenuBarGlyph.on.image)
+                        .renderingMode(.template)
+                        .foregroundStyle(isOn ? Color.white : Color.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(isOn ? Color.accentColor : Color.secondary.opacity(0.18)))
+                }
+            }
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(controller.device?.name.nonEmpty ?? "Remote for KEF")
                     .font(.headline)

@@ -30,6 +30,10 @@ final class AppModel {
             defaults.set(approachFromAbove, forKey: Keys.approachFromAbove)
         }
     }
+    /// Finish the speaker icon is drawn in (KefFinish.id), or nil for the app's own look.
+    var speakerFinishID: String? {
+        didSet { defaults.set(speakerFinishID, forKey: Keys.speakerFinish) }
+    }
     /// Tab the settings window shows when it opens next.
     var settingsTab: SettingsTab = .general
     private(set) var loginItemStatus: SMAppService.Status = .notRegistered
@@ -46,6 +50,7 @@ final class AppModel {
         static let appLimit = "appVolumeLimit"
         static let showVolume = "showVolumeInMenuBar"
         static let approachFromAbove = "approachFromAbove"
+        static let speakerFinish = "speakerFinish"
     }
 
     /// The self-test passes its own defaults and keeps away from the keychain.
@@ -56,6 +61,7 @@ final class AppModel {
         hasPassword = usesKeychain && KeychainStore.password() != nil
         showsVolumeInMenuBar = defaults.object(forKey: Keys.showVolume) as? Bool ?? true
         approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
+        speakerFinishID = defaults.string(forKey: Keys.speakerFinish)
         controller.approachFromAbove = approachFromAbove
         if defaults.object(forKey: Keys.appLimit) != nil {
             controller.appLimit = Self.clampLimit(defaults.integer(forKey: Keys.appLimit))
@@ -69,6 +75,11 @@ final class AppModel {
         observeSleep()
         controller.startMonitoring()
         if !host.isEmpty { connect() }
+    }
+
+    /// The picked finish, unless it belongs to a different model than the connected speaker.
+    var speakerFinish: KefFinish? {
+        KefFinish.find(speakerFinishID, model: controller.device?.model)
     }
 
     var appLimit: Int {

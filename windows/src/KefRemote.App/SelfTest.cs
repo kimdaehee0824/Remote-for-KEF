@@ -173,6 +173,13 @@ static class SelfTest
             await host.ReconnectAsync();
             Expect(c.Phase == SpeakerPhase.On, "back on");
         });
+        await Step("speaker finish", async () =>
+        {
+            host.Settings.SpeakerFinish = "lsx-ii-lt/sage-green";
+            host.SaveSettings();
+            host.ShowFlyout();
+            await Capture(host.Flyout.Root, "15-flyout-finish.png");
+        });
         foreach (var (page, file) in new[]
                  {
                      (SettingsPage.General, "10-settings-general.png"),

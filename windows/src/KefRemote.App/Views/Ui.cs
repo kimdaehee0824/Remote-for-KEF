@@ -1,4 +1,5 @@
 using KefRemote.Desktop;
+using KefRemote.Drivers.Kef;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -16,7 +17,7 @@ static class Glyphs
         Usb = "\uE88E", Wifi = "\uE701", Bluetooth = "\uE702", Tv = "\uE7F4", Optical = "\uE706", Audio = "\uE8D6",
         Network = "\uE968", Limit = "\uE72E", Folder = "\uE838", Link = "\uE71B", Pin = "\uE840", Play = "\uE768",
         Refresh = "\uE72C", Message = "\uE8BD", Sort = "\uE8CB", Volume = "\uE767", Home = "\uE80F",
-        Up = "\uE70E", Down = "\uE70D";
+        Up = "\uE70E", Down = "\uE70D", Color = "\uE790";
 
     public static string ForSource(string id) => id switch
     {
@@ -179,11 +180,11 @@ static class Ui
 
     /// <summary>
     /// The app icon drawn as vectors (Uni-Q driver centered on the cabinet) so it stays sharp at any scale.
-    /// Brand colors, the same in light and dark mode.
+    /// Brand colors, the same in light and dark mode, or the colors of the speaker's finish.
     /// </summary>
-    public static Viewbox AppGlyph(double size)
+    public static Viewbox AppGlyph(double size, KefFinish? finish = null)
     {
-        static SolidColorBrush Brush(byte r, byte g, byte b) => new(Windows.UI.Color.FromArgb(255, r, g, b));
+        static SolidColorBrush Brush(uint rgb) => new(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
         var canvas = new Canvas { Width = 48, Height = 48 };
         void Add(Shape shape, double left, double top)
         {
@@ -191,10 +192,10 @@ static class Ui
             Canvas.SetTop(shape, top);
             canvas.Children.Add(shape);
         }
-        Add(new Rectangle { Width = 28, Height = 42, RadiusX = 5, RadiusY = 5, Fill = Brush(0xD4, 0x5F, 0x2A) }, 10, 3);
-        Add(new Ellipse { Width = 22, Height = 22, Fill = Brush(0x2A, 0x2E, 0x35) }, 13, 13);
-        Add(new Ellipse { Width = 16.4, Height = 16.4, Fill = Brush(0xEC, 0xE7, 0xDF) }, 15.8, 15.8);
-        Add(new Ellipse { Width = 6.4, Height = 6.4, Fill = Brush(0xD4, 0x5F, 0x2A) }, 20.8, 20.8);
+        Add(new Rectangle { Width = 28, Height = 42, RadiusX = 5, RadiusY = 5, Fill = Brush(finish?.Cabinet ?? 0xD45F2A) }, 10, 3);
+        Add(new Ellipse { Width = 22, Height = 22, Fill = Brush(finish?.Trim ?? 0x2A2E35) }, 13, 13);
+        Add(new Ellipse { Width = 16.4, Height = 16.4, Fill = Brush(finish?.Cone ?? 0xECE7DF) }, 15.8, 15.8);
+        Add(new Ellipse { Width = 6.4, Height = 6.4, Fill = Brush(finish?.Tweeter ?? 0xD45F2A) }, 20.8, 20.8);
         return new Viewbox { Width = size, Height = size, Child = canvas };
     }
 }

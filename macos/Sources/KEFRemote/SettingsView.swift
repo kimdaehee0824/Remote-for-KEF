@@ -1,4 +1,5 @@
 import KefRemoteCore
+import KefW2Driver
 import ServiceManagement
 import SwiftUI
 
@@ -101,16 +102,21 @@ struct SpeakerSettings: View {
             }
 
             if let device = controller.device {
-                Section("기기 정보") {
+                Section {
                     LabeledContent("이름", value: device.name)
                     LabeledContent("모델", value: device.model)
+                    FinishPicker(model: device.model)
                     LabeledContent("펌웨어", value: device.firmware)
                     LabeledContent("검증 상태", value: device.verifiedModel ? "실기 검증됨" : "미검증 모델 (공개 코드 기준)")
+                } header: {
+                    Text("기기 정보")
+                } footer: {
+                    Text(wrapping: "색상은 패널의 스피커 그림에 쓰입니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.")
                 }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: controller.device == nil ? 300 : 470)
+        .frame(width: 500, height: controller.device == nil ? 300 : 540)
         .onAppear {
             hostDraft = model.host
             passwordDraft = ""
@@ -133,6 +139,29 @@ struct SpeakerSettings: View {
         case .connecting: "연결 중…"
         case let .offline(message): message
         case .idle: "설정되지 않음"
+        }
+    }
+}
+
+/// The finish the panel draws the speaker in. Lists the connected model's finishes,
+/// or every finish when the model is not in the table.
+private struct FinishPicker: View {
+    @Environment(AppModel.self) private var appModel
+    let model: String
+
+    var body: some View {
+        let finishes = KefFinish.finishes(for: model)
+        let otherModels = finishes.contains { $0.model != model }
+        Picker("색상", selection: Binding(get: { appModel.speakerFinish?.id }, set: { appModel.speakerFinishID = $0 })) {
+            Text("앱 기본").tag(String?.none)
+            ForEach(finishes) { finish in
+                Label {
+                    Text(otherModels ? "\(finish.model) \(finish.name)" : finish.name)
+                } icon: {
+                    Image(nsImage: SpeakerArt.image(finish, size: 16))
+                }
+                .tag(Optional(finish.id))
+            }
         }
     }
 }

@@ -138,6 +138,12 @@ enum SelfTest {
             await controller.refresh()
             try expect(controller.isOnline, "back online")
         }
+        await step("speaker finish") {
+            model.speakerFinishID = "lsx-ii-lt/sage-green"
+            try expect(model.speakerFinish?.name == "Sage Green", "finish of the connected LSX II LT")
+            try await panel.save(folder, "12-panel-finish.png")
+            try await darkPanel.save(folder, "12-panel-finish-dark.png")
+        }
         await step("settings") {
             try await Capture(width: 500) { GeneralSettings().environment(model) }.save(folder, "08-settings-general.png")
             try await Capture(width: 500) { SpeakerSettings().environment(model) }.save(folder, "09-settings-speaker.png")

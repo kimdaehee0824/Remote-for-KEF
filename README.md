@@ -22,6 +22,7 @@ It deliberately does **not** sync with the Windows or Mac system volume. The spe
 - **Exact volume, 0 to 100 in steps of 1**, always the value the speaker reports back.
 - **Volume limit**: the app limit (default 30) and the maximum volume set in KEF Connect, whichever is lower. The limit is marked on the slider with where it comes from. Raises stop there; lowering always works.
 - **Exact volume matching** (off by default): KEF speakers can sound quieter at the same number when it is reached from below. When on, raises pass briefly through a slightly higher value (never above the limit) so every level sounds as if it was reached from above. Explained in the app's (?) / (i) help.
+- **Speaker finish**: pick your speaker's finish in settings (Sage Green, Carbon Black, ...) and the speaker icon in the flyout or panel is drawn in its colors. Speakers do not report their finish; the colors are approximations sampled from KEF product photos.
 - **Windows**: WinUI 3 tray flyout, global hotkeys for volume up/down and mute (default Ctrl+Alt+↑/↓/M, changeable) with a volume display in the bottom-right corner, settings window.
 - **macOS**: menu bar panel with the system slider and switch, haptic ticks every 5 while dragging on a Force Touch trackpad, Liquid Glass buttons on macOS 26 and later, settings window with tabs.
 - **Safe by default**: nothing is written on startup, reconnect or polling, every write is read back, and nothing is replayed after a network drop. See [docs/drivers.md](docs/drivers.md).

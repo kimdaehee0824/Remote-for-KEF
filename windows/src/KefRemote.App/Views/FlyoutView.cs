@@ -1,6 +1,7 @@
 using KefRemote.App.Native;
 using KefRemote.Core;
 using KefRemote.Desktop;
+using KefRemote.Drivers.Kef;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
@@ -90,6 +91,7 @@ sealed class FlyoutView
     long shownAt, hiddenAt = long.MinValue / 2;
     PointInt32 anchor;
     string tileSignature = "", keysSignature = "";
+    KefFinish? shownFinish;
     SizeInt32 lastClientSize;
 
     public bool IsVisible { get; private set; }
@@ -355,6 +357,12 @@ sealed class FlyoutView
                 subtitle.Text = SpeakerPresentation.Subtitle(c, configured);
                 subtitle.Style = Ui.Style(SpeakerPresentation.SubtitleIsError(c, configured) || setupError ? "KefCriticalText" : "KefSecondaryText");
                 subtitle.FontWeight = FontWeights.Normal;
+            }
+            var finish = KefFinishes.Find(host.Settings.SpeakerFinish, c.Device?.Model);
+            if (finish != shownFinish)
+            {
+                shownFinish = finish;
+                appIcon.Child = Ui.AppGlyph(26, finish);
             }
             appIcon.Opacity = phase is SpeakerPhase.On or SpeakerPhase.Standby ? 1 : 0.6;
 
