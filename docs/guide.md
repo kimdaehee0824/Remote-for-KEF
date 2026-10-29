@@ -15,7 +15,7 @@ A walk through each screen of Remote for KEF. The numbers in each picture match 
 
 ### Install
 
-- **Windows**: unzip and run `RemoteForKEF.exe`. The app isn't signed, so if SmartScreen appears, choose **More info → Run anyway**. Move the folder somewhere it can stay, rather than running it from Downloads.
+- **Windows**: run `RemoteForKEF-win-x64-Setup.exe` (`-arm64-` on ARM PCs). The app isn't signed, so if SmartScreen appears, choose **More info → Run anyway**. It installs for your account without admin rights and adds a Start menu shortcut. To use it without installing, unzip `RemoteForKEF-win-x64.zip` into a folder where it can stay and open `Remote for KEF.exe`.
 - **macOS**: unzip, move **Remote for KEF** to Applications and open it. If macOS says it can't be opened, go to **System Settings → Privacy & Security** and click **Open Anyway**. Allow Local Network access when asked, or the speaker can't be reached.
 
 ### Connect the speaker
@@ -79,6 +79,8 @@ If another app uses the same combination, **Check shortcuts** shows at the botto
 1. **Menu**: General, Speaker, Volume, Shortcuts and About.
 2. **Start with Windows**: starts quietly in the notification area when you sign in.
 3. **Keep the icon visible**: Windows 11 hides new icons under the ^. Select **Open taskbar settings** and turn on Remote for KEF to reach it in one click.
+
+**Updates**, further down the same page: with **Update automatically** on, the app checks GitHub once a day, downloads a new version and applies it the next time it starts. **Check for updates** checks right away, and **Restart to update** applies a downloaded version at once.
 
 ### Settings: Speaker
 
@@ -161,6 +163,8 @@ When the connection is lost, the icon changes shape once more.
 1. **Tabs**: General, Speaker and Volume
 2. **Open at login**: may need approval in System Settings the first time.
 3. **Show the volume in the menu bar**: on by default. Off leaves only the icon.
+
+**Updates**, on the same tab: with **Check for updates automatically** on, the app checks once a day, and with **Download and install automatically** on as well, it installs when the app quits. **Check Now…** checks right away. An update found while the app sits in the menu bar shows as a line in the panel until you choose **Install…**.
 
 ### Settings: Speaker
 

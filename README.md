@@ -8,7 +8,7 @@
 <p align="center">English · <a href="README_ko.md">한국어</a> · <a href="README_jp.md">日本語</a></p>
 
 <p align="center">
-  <a href="https://github.com/kimdaehee0824/Remote-for-KEF/releases/latest/download/RemoteForKEF-win-x64.zip"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/download-windows-dark.svg"><img src="docs/images/download-windows-light.svg" height="44" alt="Download for Windows"></picture></a>
+  <a href="https://github.com/kimdaehee0824/Remote-for-KEF/releases/latest/download/RemoteForKEF-win-x64-Setup.exe"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/download-windows-dark.svg"><img src="docs/images/download-windows-light.svg" height="44" alt="Download for Windows"></picture></a>
   &nbsp;
   <a href="https://github.com/kimdaehee0824/Remote-for-KEF/releases/latest/download/RemoteForKEF-macos.zip"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/download-macos-dark.svg"><img src="docs/images/download-macos-light.svg" height="44" alt="Download for macOS"></picture></a>
 </p>
@@ -18,6 +18,7 @@
 - Power, inputs and volume in steps of 1
 - A volume limit, and accurate volume so the same number always sounds the same
 - Shortcuts and an on-screen volume display on Windows
+- Updates itself on both systems
 
 How each screen and feature works is in the [User guide](docs/guide.md).
 
@@ -25,7 +26,7 @@ How each screen and feature works is in the [User guide](docs/guide.md).
 
 The builds aren't signed, so each system asks once on first launch.
 
-- **Windows 10 (1809) or 11**: unzip, run `RemoteForKEF.exe` and choose **More info → Run anyway**. The ARM64 build is on [Releases](https://github.com/kimdaehee0824/Remote-for-KEF/releases).
+- **Windows 10 (1809) or 11**: run `RemoteForKEF-win-x64-Setup.exe` and choose **More info → Run anyway**. It installs for your account, no admin rights needed. To use it without installing, unzip `RemoteForKEF-win-x64.zip` and open `Remote for KEF.exe`. The ARM64 builds are on [Releases](https://github.com/kimdaehee0824/Remote-for-KEF/releases).
 - **macOS 14 or later**: move the app to Applications, open it and click **Open Anyway** in **System Settings → Privacy & Security**. Allow Local Network access when asked.
 
 Then enter the speaker's IP address in Settings. More in the [User guide](docs/guide.md#getting-started).
