@@ -1,0 +1,251 @@
+name: Release
+
+# A version tag (v0.3.0) builds the downloads and the update feeds and attaches them to a draft release for that
+# tag. Publishing the draft makes it the update for every installed copy: Sparkle reads
+# releases/latest/download/appcast.xml, Velopack reads releases.win-x64.json and releases.win-arm64.json.
+# Signing secrets are listed in CONTRIBUTING.md. Without the Developer ID ones the Mac app is signed ad hoc.
+# Without the Sparkle key the release has no appcast.xml; add the key, then run this workflow by hand for the tag
+# with "appcast only" to sign one for the Mac zip already on the release.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v0.3.0
+        required: true
+        type: string
+      appcast_only:
+        description: Only add appcast.xml for the Mac zip already on the release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  # Same version as the Velopack package in KefRemote.App.csproj.
+  VPK_VERSION: 1.2.161
+  # Same version as the Sparkle package in macos/Package.swift.
+  SPARKLE_VERSION: 2.10.1
+  SPARKLE_TOOLS_SHA256: 1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
+
+jobs:
+  windows:
+    if: ${{ !inputs.appcast_only }}
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version matches the tag
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content windows/Directory.Build.props)).Project.PropertyGroup.Version
+          if ("v$version" -ne $env:TAG) { throw "windows/Directory.Build.props has $version, the tag is $env:TAG" }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Publish app (x64, ARM64)
+        shell: pwsh
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            $platform = if ($arch -eq 'x64') { 'x64' } else { 'ARM64' }
+            dotnet publish windows/src/KefRemote.App/KefRemote.App.csproj -c Release -r "win-$arch" -p:Platform=$platform -o "dist/RemoteForKEF-win-$arch"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      # One channel per architecture, so each install only ever updates to its own build.
+      # Installs to %LocalAppData%\RemoteForKEF without admin rights, with a Start menu shortcut.
+      - name: Package with Velopack
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk --version $env:VPK_VERSION
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          New-Item -ItemType Directory -Force upload | Out-Null
+          foreach ($arch in 'x64', 'arm64') {
+            $out = "releases/$arch"
+            vpk pack --packId RemoteForKEF --packVersion $env:VERSION --packTitle "Remote for KEF" --packAuthors kimdaehee0824 `
+              --packDir "dist/RemoteForKEF-win-$arch" --mainExe RemoteForKEF.exe --icon windows/src/KefRemote.App/Assets/AppIcon.ico `
+              --channel "win-$arch" --runtime "win-$arch" --shortcuts StartMenuRoot --outputDir $out
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # The portable zip keeps the name the README's download button points at.
+            Copy-Item "$out/RemoteForKEF-win-$arch-Portable.zip" "upload/RemoteForKEF-win-$arch.zip"
+            Copy-Item "$out/RemoteForKEF-win-$arch-Setup.exe" upload/
+            Copy-Item "$out/RemoteForKEF-$env:VERSION-win-$arch-full.nupkg" upload/
+            Copy-Item "$out/releases.win-$arch.json" upload/
+          }
+          Get-ChildItem upload | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: upload
+
+  macos:
+    if: ${{ !inputs.appcast_only }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: macos
+    env:
+      DEVELOPER_ID_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Version matches the tag
+        run: |
+          version="$(plutil -extract CFBundleShortVersionString raw Resources/Info.plist)"
+          build="$(plutil -extract CFBundleVersion raw Resources/Info.plist)"
+          if [[ "v$version" != "$TAG" ]]; then echo "Info.plist has $version, the tag is $TAG" >&2; exit 1; fi
+          # Sparkle compares CFBundleVersion, so it is a whole number that goes up with every release.
+          if [[ ! "$build" =~ ^[0-9]+$ ]]; then echo "CFBundleVersion must be a whole number: $build" >&2; exit 1; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Import Developer ID certificate
+        if: env.DEVELOPER_ID_IDENTITY != ''
+        env:
+          CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Build app
+        env:
+          SIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+        run: scripts/build-app.sh --universal
+
+      - name: Check the app
+        run: |
+          APP="build/Remote for KEF.app"
+          test "$(plutil -extract CFBundleShortVersionString raw "$APP/Contents/Info.plist")" = "$VERSION"
+          test -f "$APP/Contents/Resources/Assets.car"
+          test -d "$APP/Contents/Frameworks/Sparkle.framework"
+          archs="$(lipo -archs "$APP/Contents/MacOS/KEFRemote")"
+          [[ " $archs " == *" arm64 "* && " $archs " == *" x86_64 "* ]]
+          codesign --verify --strict --deep --verbose=2 "$APP"
+          if [[ -n "$DEVELOPER_ID_IDENTITY" ]]; then
+            codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "Authority=Developer ID Application"
+            codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "flags=.*runtime"
+          fi
+
+      # Also proves the app loads Sparkle.framework with this signature.
+      - name: UI self-test
+        run: |
+          out="$RUNNER_TEMP/self-test"
+          "build/Remote for KEF.app/Contents/MacOS/KEFRemote" --self-test "$out" --lang en &
+          pid=$!
+          for _ in $(seq 1 180); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then kill "$pid"; echo "self-test timed out" >&2; exit 1; fi
+          wait "$pid"
+          cat "$out/report.txt"
+
+      - name: Notarize and staple
+        if: env.DEVELOPER_ID_IDENTITY != ''
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          APP="build/Remote for KEF.app"
+          printf '%s\n' "$NOTARY_KEY_P8" > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --wait --timeout 30m
+          rm "$RUNNER_TEMP/notary.p8"
+          xcrun stapler staple "$APP"
+          spctl --assess --type execute --verbose=2 "$APP"
+
+      # Installed copies only accept an update signed with the key whose public half is in their Info.plist.
+      - name: Zip and appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          mkdir -p upload
+          ditto -c -k --keepParent "build/Remote for KEF.app" upload/RemoteForKEF-macos.zip
+          if [[ -n "$SPARKLE_ED_PRIVATE_KEY" ]]; then
+            scripts/sign-appcast.sh "$PWD/upload" "$PWD/upload/appcast.xml"
+          else
+            echo "::warning::No SPARKLE_ED_PRIVATE_KEY secret, so no appcast.xml: installed Mac copies won't see this release until one is added (see CONTRIBUTING.md)."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: macos/upload
+
+  release:
+    if: ${{ !inputs.appcast_only }}
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: upload
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: upload
+        run: |
+          sha256sum RemoteForKEF-win-x64-Setup.exe RemoteForKEF-win-arm64-Setup.exe \
+            RemoteForKEF-win-x64.zip RemoteForKEF-win-arm64.zip RemoteForKEF-macos.zip | tee SHA256SUMS.txt
+          ls -l
+
+      # A draft until the notes are written; nothing updates before it is published.
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" upload/* --clobber
+          else
+            gh release create "$TAG" upload/* --draft --verify-tag \
+              --title "Remote for KEF ${TAG#v}" --notes "Release notes to come."
+          fi
+
+  # After the Sparkle key was added: signs an appcast for the Mac zip on the release, nothing is rebuilt.
+  appcast:
+    if: ${{ inputs.appcast_only }}
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Sign and attach appcast.xml
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$TAG" -p RemoteForKEF-macos.zip -D "$RUNNER_TEMP/release"
+          scripts/sign-appcast.sh "$RUNNER_TEMP/release" "$RUNNER_TEMP/appcast.xml"
+          gh release upload "$TAG" "$RUNNER_TEMP/appcast.xml" --clobber

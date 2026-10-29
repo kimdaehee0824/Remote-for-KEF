@@ -44,6 +44,18 @@ jobs:
             if ($p.ExitCode -ne 0) { throw "self-test ($lang) failed with exit code $($p.ExitCode)" }
           }
 
+      # The release workflow wraps the published folder with Velopack; check that still works on every push.
+      - name: Velopack package (x64)
+        shell: pwsh
+        run: |
+          dotnet tool install -g vpk --version 1.2.161
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+          $version = ([xml](Get-Content windows/Directory.Build.props)).Project.PropertyGroup.Version
+          vpk pack --packId RemoteForKEF --packVersion $version --packTitle "Remote for KEF" --packDir dist/RemoteForKEF-win-x64 `
+            --mainExe RemoteForKEF.exe --channel win-x64 --runtime win-x64 --outputDir velopack-check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem velopack-check | Format-Table Name, Length
+
       - name: Upload self-test screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,6 +92,9 @@ jobs:
       # here that should fail instead of shipping the generic icon.
       - name: App icon compiled
         run: test -f "build/Remote for KEF.app/Contents/Resources/Assets.car" && test -f "build/Remote for KEF.app/Contents/Resources/AppIcon.icns"
+      # Sparkle (updates) is inside the bundle; the self-test below fails if the app can't load it.
+      - name: Sparkle embedded
+        run: test -d "build/Remote for KEF.app/Contents/Frameworks/Sparkle.framework" && codesign --verify --strict --deep "build/Remote for KEF.app"
       # Every panel state and settings tab against a simulated speaker, once per UI language:
       # PNGs and report.txt, exit 0 only on pass.
       - name: UI self-test
