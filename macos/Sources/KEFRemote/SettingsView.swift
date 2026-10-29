@@ -53,10 +53,39 @@ struct GeneralSettings: View {
             } header: {
                 Text(loc("메뉴 막대", "Menu Bar", "メニューバー"))
             }
+            UpdateSettings()
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 250)
+        .frame(width: 500, height: 440)
         .onAppear { model.refreshLoginItemStatus() }
+    }
+}
+
+/// Sparkle's settings (kept in the app's defaults) and a manual check that opens Sparkle's window.
+private struct UpdateSettings: View {
+    @Bindable private var updater = AppUpdater.shared
+
+    var body: some View {
+        Section {
+            LabeledContent(loc("현재 버전", "Current version", "現在のバージョン"), value: updater.currentVersion)
+            if updater.isConfigured {
+                Toggle(loc("자동으로 업데이트 확인", "Check for updates automatically", "アップデートを自動で確認"), isOn: $updater.checksAutomatically)
+                Toggle(isOn: $updater.downloadsAutomatically) {
+                    Text(loc("자동으로 내려받아 설치", "Download and install automatically", "自動でダウンロードしてインストール"))
+                    Text(loc("하루에 한 번 GitHub에서 확인하고, 앱을 종료할 때 설치합니다", "Checks GitHub once a day and installs when the app quits", "1日に1回GitHubで確認し、アプリの終了時にインストールします"))
+                }
+                .disabled(!updater.checksAutomatically)
+                HStack {
+                    Spacer()
+                    Button(loc("지금 확인…", "Check Now…", "今すぐ確認…")) { updater.checkForUpdates() }
+                }
+            } else {
+                Text(loc("이 빌드는 스스로 업데이트하지 않습니다. GitHub 릴리스에서 받은 앱만 업데이트합니다.", "This build doesn't update itself. Only the app from the GitHub releases does.", "このビルドは自動でアップデートしません。GitHubのリリースから入手したアプリだけがアップデートします。"))
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(loc("업데이트", "Updates", "アップデート"))
+        }
     }
 }
 

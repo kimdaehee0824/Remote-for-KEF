@@ -5,8 +5,9 @@ A menu bar app for KEF W2 speakers. It turns the speaker on and off, changes the
 - **Menu bar**: a speaker with one Uni-Q driver (not the system Sound symbol, so the two volumes are never confused) and the volume in a slot two digits wide. Filled, muted, outlined (standby) and crossed out (offline) are told apart by shape; the icon is a template image the system tints.
 - **Panel**: name and model with the power switch on the right, the volume number and system slider with the limit marked in orange, and the input list with a check. While an input switch runs, a spinner sits on that row and the others dim. In standby the list wakes the speaker on the input you pick, with the last one labelled.
 - **Haptics**: a tick every 5 while dragging the slider on a Force Touch trackpad, and a different one at the limit. Nothing on a mouse or with the arrow keys.
+- **Updates**: Sparkle checks the GitHub releases once a day. An update found while the app sits in the background waits as a line in the panel instead of opening a window behind other apps.
 - **Glass**: Settings and Quit are `.buttonStyle(.glass)` buttons in a `GlassEffectContainer` on macOS 26 and later, `.bordered` on 14 and 15. Everything else is a system component and picks up Liquid Glass from the system. They carry ⌘, and ⌘Q, since a menu bar app has no app menu.
-- **Settings**: 일반 (launch at login, number in the menu bar), 스피커 (IP address, speaker webpage password in the Keychain, connection state, device details), 음량 (app limit as slider and field, KEF maximum volume, the limit in effect, 정확한 음량 맞추기 with an (i) popover).
+- **Settings**: 일반 (launch at login, number in the menu bar, updates), 스피커 (IP address, speaker webpage password in the Keychain, connection state, device details), 음량 (app limit as slider and field, KEF maximum volume, the limit in effect, 정확한 음량 맞추기 with an (i) popover).
 
 Safety rules are shared with the Windows app and described in [docs/drivers.md](../docs/drivers.md). Connecting, reconnecting and polling only read; nothing is written without a user action.
 
@@ -16,7 +17,7 @@ Safety rules are shared with the Windows app and described in [docs/drivers.md](
 - Xcode 16 or later, or the matching Command Line Tools (Swift 6). Building with Xcode 26 (Swift 6.2) adds the glass buttons; older toolchains build the bordered ones.
 - The speaker and the Mac on the same local network. macOS asks for Local Network access on first use; allow it.
 
-No third-party dependencies. CryptoKit and CommonCrypto provide the `HMAC_SHA256_AES256` scheme.
+The only dependency is [Sparkle 2](https://sparkle-project.org) for updates, through SwiftPM. CryptoKit and CommonCrypto provide the `HMAC_SHA256_AES256` scheme.
 
 ## Build and run
 

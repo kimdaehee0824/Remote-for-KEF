@@ -34,6 +34,12 @@
 	<string>public.app-category.utilities</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Used to read and change the volume and input of speakers on the same network.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/kimdaehee0824/Remote-for-KEF/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>02ikPy0OnsNmEQuwTvHesxO6RNFbQLGADy6LVBXZyxI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

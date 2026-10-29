@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Demo.start(AppModel.shared)
         } else {
             AppModel.shared.start()
+            AppUpdater.shared.start()
         }
     }
 }

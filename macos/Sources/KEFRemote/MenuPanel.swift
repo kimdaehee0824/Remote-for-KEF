@@ -28,6 +28,9 @@ struct MenuPanel: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let version = AppUpdater.shared.waitingVersion {
+                UpdateReminder(version: version)
+            }
             PanelFooter { showSettings(nil) }
         }
         .padding(16)
@@ -80,6 +83,27 @@ struct MenuPanel: View {
 
     private func showSettings(_ tab: SettingsTab?) {
         model.openSettings(tab, using: openSettings)
+    }
+}
+
+/// An update the daily check found while the panel was closed (Sparkle's gentle reminders).
+/// Install opens Sparkle's window with the release notes.
+private struct UpdateReminder: View {
+    let version: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label {
+                Text(loc("\(version) 버전을 설치할 수 있습니다", "Version \(version) is available", "バージョン \(version) をインストールできます"))
+            } icon: {
+                Image(systemName: "arrow.down.circle")
+            }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button(loc("설치…", "Install…", "インストール…")) { AppUpdater.shared.checkForUpdates() }
+                .controlSize(.small)
+        }
     }
 }
 
