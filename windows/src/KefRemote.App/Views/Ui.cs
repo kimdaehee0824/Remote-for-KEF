@@ -192,7 +192,13 @@ static class Ui
             Canvas.SetTop(shape, top);
             canvas.Children.Add(shape);
         }
-        Add(new Rectangle { Width = 28, Height = 42, RadiusX = 5, RadiusY = 5, Fill = Brush(finish?.Cabinet ?? 0xD45F2A) }, 10, 3);
+        var cabinet = new Rectangle { Width = 28, Height = 42, RadiusX = 5, RadiusY = 5, Fill = Brush(finish?.Cabinet ?? 0xD45F2A) };
+        if (finish != null)
+        {
+            cabinet.Stroke = Brush(finish.Edge);
+            cabinet.StrokeThickness = 1.5;
+        }
+        Add(cabinet, 10, 3);
         Add(new Ellipse { Width = 22, Height = 22, Fill = Brush(finish?.Trim ?? 0x2A2E35) }, 13, 13);
         Add(new Ellipse { Width = 16.4, Height = 16.4, Fill = Brush(finish?.Cone ?? 0xECE7DF) }, 15.8, 15.8);
         Add(new Ellipse { Width = 6.4, Height = 6.4, Fill = Brush(finish?.Tweeter ?? 0xD45F2A) }, 20.8, 20.8);

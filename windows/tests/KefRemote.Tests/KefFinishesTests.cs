@@ -22,6 +22,15 @@ public class KefFinishesTests
         Assert.Equal(KefFinishes.All, KefFinishes.For("KEF LS30"));
 
     [Fact]
+    public void EdgeIsLighterOnDarkCabinetsAndDarkerOnLightOnes()
+    {
+        var sage = KefFinishes.Find("lsx-ii-lt/sage-green", null)!;
+        var stone = KefFinishes.Find("lsx-ii-lt/stone-white", null)!;
+        Assert.Equal(0x7E8E84u, sage.Edge);
+        Assert.Equal(0xAFA9A2u, stone.Edge);
+    }
+
+    [Fact]
     public void SavedFinishOfAnotherModelIsIgnored()
     {
         Assert.Equal("Sage Green", KefFinishes.Find("lsx-ii-lt/sage-green", "LSX II LT")?.Name);

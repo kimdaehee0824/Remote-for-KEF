@@ -11,6 +11,32 @@ public struct KefFinish: Sendable, Equatable, Identifiable {
     public let trim: UInt32
     public let cone: UInt32
     public let tweeter: UInt32
+
+    /// Outline of the cabinet, lighter than a dark cabinet and darker than a light one, so the
+    /// speaker keeps its shape on a background of a similar color (a dark speaker in dark mode).
+    public var edge: UInt32 {
+        let dark = Self.luminance(cabinet) < 0.5
+        return Self.mix(cabinet, dark ? 0xFFFFFF : 0, dark ? 0.35 : 0.18)
+    }
+
+    private static func component(_ rgb: UInt32, _ shift: UInt32) -> Double {
+        Double((rgb >> shift) & 0xFF)
+    }
+
+    private static func luminance(_ rgb: UInt32) -> Double {
+        let red = 0.2126 * component(rgb, 16)
+        let green = 0.7152 * component(rgb, 8)
+        let blue = 0.0722 * component(rgb, 0)
+        return (red + green + blue) / 255
+    }
+
+    private static func mix(_ a: UInt32, _ b: UInt32, _ t: Double) -> UInt32 {
+        func channel(_ shift: UInt32) -> UInt32 {
+            let value = component(a, shift) * (1 - t) + component(b, shift) * t
+            return UInt32(value.rounded()) << shift
+        }
+        return channel(16) | channel(8) | channel(0)
+    }
 }
 
 /// Finishes per model, so the speaker icon can match the speaker. The speakers report only a

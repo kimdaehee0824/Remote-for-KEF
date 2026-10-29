@@ -4,7 +4,22 @@ namespace KefRemote.Drivers.Kef;
 /// One KEF finish as the colours of the speaker icon, each 0xRRGGBB: cabinet, the trim ring
 /// around the Uni-Q driver, its cone and the tweeter in the middle.
 /// </summary>
-public sealed record KefFinish(string Id, string Model, string Name, uint Cabinet, uint Trim, uint Cone, uint Tweeter);
+public sealed record KefFinish(string Id, string Model, string Name, uint Cabinet, uint Trim, uint Cone, uint Tweeter)
+{
+    /// <summary>
+    /// Outline of the cabinet, lighter than a dark cabinet and darker than a light one, so the
+    /// speaker keeps its shape on a background of a similar color (a dark speaker in dark mode).
+    /// </summary>
+    public uint Edge => Mix(Cabinet, Luminance(Cabinet) < 0.5 ? 0xFFFFFFu : 0, Luminance(Cabinet) < 0.5 ? 0.35 : 0.18);
+
+    static double Luminance(uint rgb) => (0.2126 * (rgb >> 16 & 0xFF) + 0.7152 * (rgb >> 8 & 0xFF) + 0.0722 * (rgb & 0xFF)) / 255;
+
+    static uint Mix(uint a, uint b, double t)
+    {
+        uint Channel(int shift) => (uint)Math.Round((a >> shift & 0xFF) * (1 - t) + (b >> shift & 0xFF) * t) << shift;
+        return Channel(16) | Channel(8) | Channel(0);
+    }
+}
 
 /// <summary>
 /// Finishes per model, so the speaker icon can match the speaker. The speakers report only a
