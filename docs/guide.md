@@ -8,6 +8,7 @@ A walk through each screen of Remote for KEF. The numbers in each picture match 
 - [Windows](#windows)
 - [macOS](#macos)
 - [Volume limit and accurate volume](#volume-limit-and-accurate-volume)
+- [Speaker drawings](#speaker-drawings)
 - [Troubleshooting](#troubleshooting)
 
 ## Getting started
@@ -87,7 +88,7 @@ If another app uses the same combination, **Check shortcuts** shows at the botto
 2. **Device web page password**: leave it empty if you haven't set one. It is stored encrypted for your Windows user.
 3. **Connect**: the connection status shows next to it.
 4. **Device name and model**: as the speaker reports them once connected.
-5. **Speaker finish**: speakers don't report their color, so pick it here. The speaker in the flyout takes this finish. The default is LS60 Royal Blue.
+5. **Speaker finish**: speakers don't report their color, so pick it here. The list shows only your model's finishes, and the speaker in the flyout takes the one you pick. Without one it uses the app's default, LS60 Royal Blue. The drawings for each model are [below](#speaker-drawings).
 6. **Firmware**
 
 ### Settings: Volume
@@ -169,7 +170,7 @@ When the connection is lost, the icon changes shape once more.
 2. **Web page password**: leave it empty if you haven't set one. It is stored in the keychain.
 3. **Save and Connect**: the connection status shows on the left.
 4. **Name and model**: as the speaker reports them once connected.
-5. **Finish**: the color of the speaker in the panel. The default is LS60 Royal Blue.
+5. **Finish**: the color of the speaker in the panel. The list shows only your model's finishes; without one it uses the app's default, LS60 Royal Blue. The drawings for each model are [below](#speaker-drawings).
 6. **Firmware**
 7. **Verification**: whether the model has been tested on a real speaker.
 
@@ -196,6 +197,17 @@ In some ranges a KEF speaker sounds quieter at the same number when the volume c
 - Values of 5 or less and 41 or more are sent directly. The value in between never goes past the limit, and lowering is sent as is.
 
 The measurements come from [kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume), taken on an LSX II (USB input). They haven't been checked on the LSX II LT yet, so this is off by default.
+
+## Speaker drawings
+
+<p><img src="images/guide/speaker-models.png" width="820" alt="KEF 3D models and the app's speaker drawings, by model"></p>
+
+The speaker at the top of the flyout and the panel takes the shape of your model. The top row is KEF's 3D models rendered in a single color. The bottom row is how the app draws them in each finish, simplified so each model is still recognizable at a small size. The four bookshelf models are to scale; LS60 Wireless and XIO are reduced to fit.
+
+- If you pick a finish, the app draws the model that finish belongs to, in that color.
+- If you don't, it draws the detected model in the app's default color, LS60 Royal Blue.
+- If the app doesn't know your model, you can choose the one to draw: **Speaker model** on the **Speaker** page of Settings on Windows, **Choose Model** on the **Speaker** tab of Settings on macOS. Until then the drawing is the one from the app icon.
+- The finish list shows only your model's finishes, or only the app default if the model is unknown. The model choice affects the drawing and the finish list only, not the inputs.
 
 ## Troubleshooting
 
