@@ -80,7 +80,8 @@ sealed class FlyoutView
     readonly List<SourceTile> tileList = [];
 
     readonly StackPanel keys = new() { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-    readonly HyperlinkButton hotkeyWarning = new() { Content = Loc.T("단축키 확인 필요", "Check shortcuts", "ショートカットを確認"), Padding = new Thickness(4, 2, 4, 2) };
+    // The negative margin lines the link text up with the keycaps above it.
+    readonly HyperlinkButton hotkeyWarning = new() { Content = Loc.T("단축키 확인 필요", "Check shortcuts", "ショートカットを確認"), Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(-4, 0, 0, 0) };
 
     bool updating;
     bool closing;
@@ -176,6 +177,7 @@ sealed class FlyoutView
         sourcesLabel.FontWeight = FontWeights.SemiBold;
 
         // Footer: shortcut hint on the left, gear menu on the right (settings, about, quit).
+        // The shortcut warning gets its own line under the hint; beside it, English and Japanese got cut off.
         hotkeyWarning.Click += (_, _) => host.OpenSettings(SettingsPage.Hotkeys);
         var gear = new Button
         {
@@ -189,7 +191,7 @@ sealed class FlyoutView
         AutomationProperties.SetName(gear, Loc.T("설정 및 종료", "Settings and quit", "設定と終了"));
         ToolTipService.SetToolTip(gear, Loc.T("설정 및 종료", "Settings and quit", "設定と終了"));
         gear.Flyout = BuildGearMenu();
-        var footerGrid = Ui.Columns(8, (Ui.Star, Ui.Row(8, keys, hotkeyWarning)), (Ui.Auto, gear));
+        var footerGrid = Ui.Columns(8, (Ui.Star, Ui.Column(2, keys, hotkeyWarning)), (Ui.Auto, gear));
         var footer = new Border { Style = Ui.Style("KefFooter"), Padding = new Thickness(16, 6, 8, 6), Child = footerGrid };
 
         root = new StackPanel { Width = FlyoutWidth, Children = { header, body, footer } };
