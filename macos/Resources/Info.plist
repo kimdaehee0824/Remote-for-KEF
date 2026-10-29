@@ -3,7 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>ko</string>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ko</string>
+		<string>ja</string>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>KEFRemote</string>
 	<key>CFBundleIdentifier</key>
@@ -27,7 +33,7 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>같은 네트워크에 있는 스피커의 음량과 입력을 읽고 바꾸는 데 사용합니다.</string>
+	<string>Used to read and change the volume and input of speakers on the same network.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

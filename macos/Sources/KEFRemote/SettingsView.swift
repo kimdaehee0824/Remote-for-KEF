@@ -3,7 +3,7 @@ import KefW2Driver
 import ServiceManagement
 import SwiftUI
 
-/// Settings window with toolbar tabs (design M5): 일반, 스피커, 음량.
+/// Settings window with toolbar tabs (design M5): General, Speaker, Volume.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
 
@@ -11,13 +11,13 @@ struct SettingsView: View {
         @Bindable var model = model
         TabView(selection: $model.settingsTab) {
             GeneralSettings()
-                .tabItem { Label("일반", systemImage: "gearshape") }
+                .tabItem { Label(loc("일반", "General", "一般"), systemImage: "gearshape") }
                 .tag(SettingsTab.general)
             SpeakerSettings()
-                .tabItem { Label("스피커", systemImage: "hifispeaker") }
+                .tabItem { Label(loc("스피커", "Speaker", "スピーカー"), systemImage: "hifispeaker") }
                 .tag(SettingsTab.speaker)
             VolumeSettings()
-                .tabItem { Label("음량", systemImage: "speaker.wave.2") }
+                .tabItem { Label(loc("음량", "Volume", "音量"), systemImage: "speaker.wave.2") }
                 .tag(SettingsTab.volume)
         }
     }
@@ -30,15 +30,15 @@ struct GeneralSettings: View {
         @Bindable var model = model
         Form {
             Section {
-                Toggle("로그인 시 실행", isOn: Binding(
+                Toggle(loc("로그인 시 실행", "Open at login", "ログイン時に起動"), isOn: Binding(
                     get: { model.loginItemStatus == .enabled || model.loginItemStatus == .requiresApproval },
                     set: { model.setLaunchAtLogin($0) }
                 ))
                 if model.loginItemStatus == .requiresApproval {
                     HStack {
-                        Text("시스템 설정에서 허용이 필요합니다").foregroundStyle(.secondary)
+                        Text(loc("시스템 설정에서 허용이 필요합니다", "Needs approval in System Settings", "システム設定で許可が必要です")).foregroundStyle(.secondary)
                         Spacer()
-                        Button("로그인 항목 열기") { SMAppService.openSystemSettingsLoginItems() }
+                        Button(loc("로그인 항목 열기", "Open Login Items", "ログイン項目を開く")) { SMAppService.openSystemSettingsLoginItems() }
                     }
                 }
                 if let error = model.loginItemError {
@@ -47,11 +47,11 @@ struct GeneralSettings: View {
             }
             Section {
                 Toggle(isOn: $model.showsVolumeInMenuBar) {
-                    Text("메뉴 막대에 음량 숫자 표시")
-                    Text("아이콘은 켜짐, 음소거, 대기, 연결 끊김을 모양으로 구분합니다")
+                    Text(loc("메뉴 막대에 음량 숫자 표시", "Show the volume in the menu bar", "メニューバーに音量を表示"))
+                    Text(loc("아이콘은 켜짐, 음소거, 대기, 연결 끊김을 모양으로 구분합니다", "The icon's shape tells on, muted, standby and offline apart", "アイコンの形でオン、ミュート、スタンバイ、オフラインを区別します"))
                 }
             } header: {
-                Text("메뉴 막대")
+                Text(loc("메뉴 막대", "Menu Bar", "メニューバー"))
             }
         }
         .formStyle(.grouped)
@@ -71,8 +71,8 @@ struct SpeakerSettings: View {
         let controller = model.controller
         Form {
             Section {
-                TextField("IP 주소", text: $hostDraft, prompt: Text("192.168.0.14"))
-                SecureField("웹페이지 암호", text: $passwordDraft, prompt: Text(model.hasPassword ? "저장됨 (바꿀 때만 입력)" : "없음"))
+                TextField(loc("IP 주소", "IP address", "IPアドレス"), text: $hostDraft, prompt: Text("192.168.0.14"))
+                SecureField(loc("웹페이지 암호", "Web page password", "Webページのパスワード"), text: $passwordDraft, prompt: Text(model.hasPassword ? loc("저장됨 (바꿀 때만 입력)", "Saved (enter only to change it)", "保存済み（変更する場合のみ入力）") : loc("없음", "None", "なし")))
                 HStack(spacing: 8) {
                     if let connectionError {
                         StatusDot(color: .red)
@@ -85,33 +85,33 @@ struct SpeakerSettings: View {
                     }
                     Spacer()
                     if model.hasPassword {
-                        Button("암호 삭제") {
+                        Button(loc("암호 삭제", "Delete Password", "パスワードを削除")) {
                             connectionError = model.saveConnection(host: hostDraft, password: "")
                         }
                     }
-                    Button("저장하고 연결") {
+                    Button(loc("저장하고 연결", "Save and Connect", "保存して接続")) {
                         connectionError = model.saveConnection(host: hostDraft, password: passwordDraft.isEmpty ? nil : passwordDraft)
                         passwordDraft = ""
                     }
                     .keyboardShortcut(.defaultAction)
                 }
             } header: {
-                Text("연결")
+                Text(loc("연결", "Connection", "接続"))
             } footer: {
-                Text(wrapping: "KEF 계정 암호가 아니라 스피커 웹페이지 암호입니다. 설정하지 않았다면 비워 두세요. 연결과 재연결은 상태를 읽기만 하고 음량이나 입력을 바꾸지 않습니다. IP 주소는 KEF Connect의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다.")
+                Text(wrapping: loc("KEF 계정 암호가 아니라 스피커 웹페이지 암호입니다. 설정하지 않았다면 비워 두세요. 연결과 재연결은 상태를 읽기만 하고 음량이나 입력을 바꾸지 않습니다. IP 주소는 KEF Connect의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다.", "This is the speaker's web page password, not your KEF account password. Leave it empty if you haven't set one. Connecting and reconnecting only read the status and never change the volume or input. You can find the IP address in the speaker info in KEF Connect or on your router's admin page.", "KEFアカウントのパスワードではなく、スピーカーのWebページのパスワードです。設定していない場合は空欄のままにしてください。接続と再接続は状態を読み取るだけで、音量や入力は変更しません。IPアドレスはKEF Connectのスピーカー情報やルーターの管理画面で確認できます。"))
             }
 
             if let device = controller.device {
                 Section {
-                    LabeledContent("이름", value: device.name)
-                    LabeledContent("모델", value: device.model)
+                    LabeledContent(loc("이름", "Name", "名前"), value: device.name)
+                    LabeledContent(loc("모델", "Model", "モデル"), value: device.model)
                     FinishPicker(model: device.model)
-                    LabeledContent("펌웨어", value: device.firmware)
-                    LabeledContent("검증 상태", value: device.verifiedModel ? "실기 검증됨" : "미검증 모델 (공개 코드 기준)")
+                    LabeledContent(loc("펌웨어", "Firmware", "ファームウェア"), value: device.firmware)
+                    LabeledContent(loc("검증 상태", "Verification", "検証状況"), value: device.verifiedModel ? loc("실기 검증됨", "Tested on a real speaker", "実機で検証済み") : loc("미검증 모델 (공개 코드 기준)", "Unverified model (based on public code)", "未検証のモデル（公開コードに基づく）"))
                 } header: {
-                    Text("기기 정보")
+                    Text(loc("기기 정보", "Device Info", "機器情報"))
                 } footer: {
-                    Text(wrapping: "색상은 패널의 스피커 그림에 쓰입니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.")
+                    Text(wrapping: loc("색상은 패널의 스피커 그림에 쓰입니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.", "The finish is used for the speaker in the panel. Speakers don't report their color, so pick it here.", "カラーはパネルのスピーカーの絵に使われます。スピーカーは色を知らせないため、ここで選びます。"))
                 }
             }
         }
@@ -135,10 +135,10 @@ struct SpeakerSettings: View {
     /// The full error stays here; the panel only says what to do (design M4).
     private func statusText(_ phase: SpeakerController.Phase) -> String {
         switch phase {
-        case .online: "연결됨"
-        case .connecting: "연결 중…"
+        case .online: loc("연결됨", "Connected", "接続済み")
+        case .connecting: loc("연결 중…", "Connecting…", "接続中…")
         case let .offline(message): message
-        case .idle: "설정되지 않음"
+        case .idle: loc("설정되지 않음", "Not set up", "未設定")
         }
     }
 }
@@ -152,8 +152,13 @@ private struct FinishPicker: View {
     var body: some View {
         let finishes = KefFinish.finishes(for: model)
         let otherModels = finishes.contains { $0.model != model }
-        Picker("색상", selection: Binding(get: { appModel.speakerFinish?.id }, set: { appModel.speakerFinishID = $0 })) {
-            Text("앱 기본").tag(String?.none)
+        Picker(loc("색상", "Finish", "カラー"), selection: Binding(get: { appModel.speakerFinish?.id }, set: { appModel.speakerFinishID = $0 })) {
+            Label {
+                Text(loc("앱 기본", "App default", "アプリの既定"))
+            } icon: {
+                Image(nsImage: SpeakerArt.image(.appDefault, size: 16))
+            }
+            .tag(String?.none)
             ForEach(finishes) { finish in
                 Label {
                     Text(otherModels ? "\(finish.model) \(finish.name)" : finish.name)
@@ -190,45 +195,45 @@ struct VolumeSettings: View {
                         ), in: 1...100)
                         .labelsHidden()
                         .frame(width: 150)
-                        TextField("앱 상한", value: $model.appLimit, format: .number)
+                        TextField(loc("앱 상한", "App limit", "アプリの上限"), value: $model.appLimit, format: .number)
                             .labelsHidden()
                             .multilineTextAlignment(.trailing)
                             .frame(width: 44)
                     }
                 } label: {
-                    Text("앱 상한")
-                    Text("이 앱에서 올릴 수 있는 최대 음량")
+                    Text(loc("앱 상한", "App limit", "アプリの上限"))
+                    Text(loc("이 앱에서 올릴 수 있는 최대 음량", "The highest volume this app raises to", "このアプリで上げられる最大の音量"))
                 }
                 LabeledContent {
                     Text(deviceLimitText(controller))
                 } label: {
-                    Text("KEF 기기 최대 음량")
-                    Text("KEF Connect에서 정한 값. 둘 중 낮은 값을 씁니다")
+                    Text(loc("KEF 기기 최대 음량", "KEF device maximum", "KEF機器の最大音量"))
+                    Text(loc("KEF Connect에서 정한 값. 둘 중 낮은 값을 씁니다", "Set in KEF Connect. The lower of the two applies", "KEF Connectで設定した値。低いほうを使います"))
                 }
-                LabeledContent("지금 적용 중인 상한") {
-                    Text("\(controller.effectiveLimit) (\(controller.limitFromDevice ? "KEF 기기 설정" : "앱 설정"))")
+                LabeledContent(loc("지금 적용 중인 상한", "Limit in effect", "現在の上限")) {
+                    Text(verbatim: "\(controller.effectiveLimit) (\(LimitText.source(controller)))")
                         .monospacedDigit()
                 }
             } header: {
-                Text("상한")
+                Text(loc("상한", "Limit", "上限"))
             } footer: {
-                Text(wrapping: "낮추기는 언제나 됩니다. 리모컨과 KEF Connect에서 바꾸는 음량은 제한하지 않습니다.")
+                Text(wrapping: loc("낮추기는 언제나 됩니다. 리모컨과 KEF Connect에서 바꾸는 음량은 제한하지 않습니다.", "Lowering always works. Volume changed with the remote or KEF Connect isn't limited.", "下げる操作はいつでもできます。リモコンやKEF Connectで変えた音量は制限しません。"))
             }
 
-            Section("음량 보정") {
+            Section(loc("음량 보정", "Volume Correction", "音量補正")) {
                 // Laid out by hand so the (i) button can sit right after the title.
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 4) {
-                            Text("정확한 음량 맞추기")
+                            Text(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ"))
                             ApproachInfoButton()
                         }
-                        Text("올릴 때 목표보다 살짝 높게 보낸 뒤 목표로 내립니다")
+                        Text(loc("올릴 때 목표보다 살짝 높게 보낸 뒤 목표로 내립니다", "When raising, sends a slightly higher value first and then settles on the target", "上げるときは目標より少し高く送ってから目標に下げます"))
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Toggle("정확한 음량 맞추기", isOn: $model.approachFromAbove)
+                    Toggle(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ"), isOn: $model.approachFromAbove)
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
@@ -240,8 +245,8 @@ struct VolumeSettings: View {
     }
 
     private func deviceLimitText(_ controller: SpeakerController) -> String {
-        guard let device = controller.device else { return "연결 후 표시" }
-        return device.deviceVolumeLimit.map(String.init) ?? "꺼짐"
+        guard let device = controller.device else { return loc("연결 후 표시", "Shown once connected", "接続後に表示") }
+        return device.deviceVolumeLimit.map(String.init) ?? loc("꺼짐", "Off", "オフ")
     }
 }
 
@@ -256,15 +261,15 @@ private struct ApproachInfoButton: View {
             Image(systemName: "info.circle")
         }
         .buttonStyle(.borderless)
-        .help("KEF 스피커는 같은 숫자라도 아래에서 올라올 때 더 작게 들리는 구간이 있습니다.")
-        .accessibilityLabel("정확한 음량 맞추기 설명")
+        .help(loc("KEF 스피커는 같은 숫자라도 아래에서 올라올 때 더 작게 들리는 구간이 있습니다.", "In some ranges a KEF speaker sounds quieter at the same number when the volume comes up from below.", "KEFスピーカーには、同じ数値でも下から上げたときに小さく聞こえる範囲があります。"))
+        .accessibilityLabel(loc("정확한 음량 맞추기 설명", "About accurate volume", "正確な音量合わせの説明"))
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("정확한 음량 맞추기").font(.headline)
-                Text(wrapping: "KEF 스피커는 같은 숫자라도 아래에서 올라올 때 더 작게 들리는 구간이 있습니다. 켜면 음량을 올릴 때 목표보다 조금 높은 값을 먼저 보내고 0.1초 뒤 목표 값을 보내, 위에서 내려와 맞춘 것과 같은 크기로 들리게 합니다.")
-                Text(wrapping: "예: 20으로 올리면 22를 거쳐 20, 12로 올리면 17을 거쳐 12가 됩니다. 5 이하와 41 이상은 바로 보냅니다. 잠깐 거치는 값도 상한을 넘지 않고, 내릴 때는 그대로 보냅니다.")
+                Text(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ")).font(.headline)
+                Text(wrapping: loc("KEF 스피커는 같은 숫자라도 아래에서 올라올 때 더 작게 들리는 구간이 있습니다. 켜면 음량을 올릴 때 목표보다 조금 높은 값을 먼저 보내고 0.1초 뒤 목표 값을 보내, 위에서 내려와 맞춘 것과 같은 크기로 들리게 합니다.", "In some ranges a KEF speaker sounds quieter at the same number when the volume comes up from below. When this is on, raising the volume first sends a slightly higher value and then the target 0.1 seconds later, so it sounds as loud as coming down to the target from above.", "KEFスピーカーには、同じ数値でも下から上げたときに小さく聞こえる範囲があります。オンにすると、音量を上げるときに目標より少し高い値を先に送り、0.1秒後に目標の値を送ることで、上から下げて合わせたときと同じ大きさに聞こえるようにします。"))
+                Text(wrapping: loc("예: 20으로 올리면 22를 거쳐 20, 12로 올리면 17을 거쳐 12가 됩니다. 5 이하와 41 이상은 바로 보냅니다. 잠깐 거치는 값도 상한을 넘지 않고, 내릴 때는 그대로 보냅니다.", "For example, raising to 20 goes through 22, and raising to 12 goes through 17. Values of 5 or less and 41 or more are sent directly. The value in between never goes past the limit, and lowering is sent as is.", "例: 20に上げると22を経て20に、12に上げると17を経て12になります。5以下と41以上はそのまま送ります。途中で経由する値も上限を超えず、下げるときはそのまま送ります。"))
                     .foregroundStyle(.secondary)
-                Text(wrapping: "LSX II(USB 입력)에서 잰 표를 쓰며 LSX II LT에서는 아직 확인하지 않아 기본으로 꺼 둡니다.")
+                Text(wrapping: loc("LSX II(USB 입력)에서 잰 표를 쓰며 LSX II LT에서는 아직 확인하지 않아 기본으로 꺼 둡니다.", "The table was measured on an LSX II (USB input) and hasn't been checked on the LSX II LT yet, so this is off by default.", "LSX II（USB入力）で測った表を使っており、LSX II LTではまだ確認していないため、既定ではオフです。"))
                     .foregroundStyle(.secondary)
             }
             .font(.callout)

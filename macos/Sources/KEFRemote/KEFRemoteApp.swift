@@ -7,6 +7,13 @@ struct KEFRemoteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel.shared
 
+    init() {
+        // --lang ko|en|ja: this language instead of the system's, e.g. for screenshots.
+        if let language = UILanguage.launchOption(ProcessInfo.processInfo.arguments) {
+            Loc.language = language
+        }
+    }
+
     var body: some Scene {
         // The self-test draws its own windows and leaves the menu bar alone.
         MenuBarExtra(isInserted: .constant(SelfTest.folder == nil)) {
@@ -75,10 +82,10 @@ struct MenuBarLabel: View {
 
     private var accessibilityText: String {
         let controller = model.controller
-        if controller.snapshot == nil, controller.phase == .connecting { return "Remote for KEF, 연결하는 중" }
-        guard let state = controller.snapshot, controller.isOnline else { return "Remote for KEF, 연결 안 됨" }
-        if state.power == .standby { return "Remote for KEF, 대기" }
-        return state.muted ? "Remote for KEF, 음소거" : "Remote for KEF, 음량 \(state.volume)"
+        if controller.snapshot == nil, controller.phase == .connecting { return loc("Remote for KEF, 연결하는 중", "Remote for KEF, connecting", "Remote for KEF、接続中") }
+        guard let state = controller.snapshot, controller.isOnline else { return loc("Remote for KEF, 연결 안 됨", "Remote for KEF, not connected", "Remote for KEF、未接続") }
+        if state.power == .standby { return loc("Remote for KEF, 대기", "Remote for KEF, standby", "Remote for KEF、スタンバイ") }
+        return state.muted ? loc("Remote for KEF, 음소거", "Remote for KEF, muted", "Remote for KEF、ミュート") : loc("Remote for KEF, 음량 \(state.volume)", "Remote for KEF, volume \(state.volume)", "Remote for KEF、音量 \(state.volume)")
     }
 }
 

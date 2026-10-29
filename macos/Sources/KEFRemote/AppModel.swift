@@ -110,7 +110,7 @@ final class AppModel {
                     }
                 }
             } catch {
-                return "암호를 키체인에 저장하지 못했습니다"
+                return loc("암호를 키체인에 저장하지 못했습니다", "Couldn't save the password to the keychain", "パスワードをキーチェーンに保存できませんでした")
             }
             hasPassword = KeychainStore.password() != nil
         }
@@ -179,8 +179,8 @@ final class AppModel {
             }
         } catch {
             loginItemError = Bundle.main.bundleIdentifier == nil
-                ? "앱 번들(.app)로 실행할 때만 설정할 수 있습니다"
-                : "로그인 항목을 변경하지 못했습니다: \(error.localizedDescription)"
+                ? loc("앱 번들(.app)로 실행할 때만 설정할 수 있습니다", "Only available when running as an app bundle (.app)", "アプリバンドル（.app）として実行しているときだけ設定できます")
+                : loc("로그인 항목을 변경하지 못했습니다: \(error.localizedDescription)", "Couldn't change the login item: \(error.localizedDescription)", "ログイン項目を変更できませんでした: \(error.localizedDescription)")
         }
         refreshLoginItemStatus()
     }

@@ -20,8 +20,8 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
 
     public static readonly DriverDescriptor Descriptor = new(
         "kef-w2",
-        "KEF (W2 플랫폼)",
-        "LSX II LT (검증), LSX II, LS50 Wireless II, LS60, XIO",
+        Loc.T("KEF (W2 플랫폼)", "KEF (W2 platform)", "KEF（W2プラットフォーム）"),
+        Loc.T("LSX II LT (검증), LSX II, LS50 Wireless II, LS60, XIO", "LSX II LT (verified), LSX II, LS50 Wireless II, LS60, XIO", "LSX II LT（検証済み）、LSX II、LS50 Wireless II、LS60、XIO"),
         DriverStatus.Verified,
         UsesPassword: true,
         o => new KefW2Driver(o));
@@ -58,7 +58,7 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
             // authMode "all" protects reads too.
             auth = KefW2Protocol.ReadString(await RequestAsync("GET", KefW2Protocol.GetDataUrl(Host, "settings:/webserver/authMode"), null, true, ct));
         }
-        if (auth is not ("none" or "setData" or "all")) throw new SpeakerException("지원하지 않는 인증 방식: " + auth);
+        if (auth is not ("none" or "setData" or "all")) throw new SpeakerException(Loc.T("지원하지 않는 인증 방식: ", "Unsupported authentication mode: ", "対応していない認証方式: ") + auth);
         AuthMode = auth;
 
         string modelName = KefW2Protocol.ReadString(await GetDataAsync("settings:/kef/host/modelName", ct));
@@ -92,7 +92,7 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
 
         string first = KefW2Protocol.ReadString(source.Result);
         string second = KefW2Protocol.ReadString(await GetDataAsync(SourcePath, ct));
-        if (first != second) throw new SpeakerException("입력 전환 중입니다");
+        if (first != second) throw new SpeakerException(Loc.T("입력 전환 중입니다", "The input is switching", "入力を切り替え中です"));
 
         string status = KefW2Protocol.ReadString(power.Result);
         var powerState = status switch { "powerOn" => PowerState.On, "standby" => PowerState.Standby, _ => PowerState.Unknown };
@@ -118,7 +118,7 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
 
     public Task SetSourceAsync(string sourceId, CancellationToken ct = default)
     {
-        if (Model == null || !Model.Sources.Contains(sourceId)) throw new SpeakerException("지원하지 않는 입력: " + sourceId);
+        if (Model == null || !Model.Sources.Contains(sourceId)) throw new SpeakerException(SpeakerController.UnsupportedInput + sourceId);
         return SetDataAsync(SourcePath, KefW2Protocol.Typed("kefPhysicalSource", sourceId), ct);
     }
 
@@ -137,7 +137,7 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
 
     async Task SetDataAsync(string path, JsonObject typed, CancellationToken ct)
     {
-        if (AuthMode is not ("none" or "setData" or "all")) throw new SpeakerException("인증 방식 미확인: 제어 중지");
+        if (AuthMode is not ("none" or "setData" or "all")) throw new SpeakerException(Loc.T("인증 방식 미확인: 제어 중지", "Authentication mode unknown; control stopped", "認証方式を確認できないため、操作を停止しました"));
         await RequestAsync("POST", KefW2Protocol.SetDataUrl(Host), new Payload(path, typed), AuthMode != "none", ct);
     }
 
@@ -164,17 +164,17 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
         if (secure) request.Headers.TryAddWithoutValidation("Authorization", KefW2Protocol.AuthorizationHeader(method, url, body, salt!, key!, UnixTimeMs()));
 
         string text = await SendAsync(request, ct);
-        if (text.TrimStart().StartsWith('<')) throw new SpeakerException("JSON 대신 로그인 페이지가 반환되었습니다. 기기 웹페이지 암호를 확인하세요");
+        if (text.TrimStart().StartsWith('<')) throw new SpeakerException(Loc.T("JSON 대신 로그인 페이지가 반환되었습니다. 기기 웹페이지 암호를 확인하세요", "The speaker returned a login page instead of JSON. Check the device web page password", "JSONではなくログインページが返されました。機器のWebページのパスワードを確認してください"));
         if (string.IsNullOrWhiteSpace(text))
         {
-            if (method == "GET") throw new SpeakerException("빈 API 응답");
+            if (method == "GET") throw new SpeakerException(Loc.T("빈 API 응답", "Empty API reply", "APIの応答が空です"));
             return "";
         }
         if (method == "POST" && text.Contains("\"error\"", StringComparison.Ordinal))
         {
             var node = JsonNode.Parse(text);
             if (node is JsonObject o && o["error"] is { } err && err.ToJsonString() is not ("null" or "false"))
-                throw new SpeakerException("KEF API가 명령을 거부했습니다");
+                throw new SpeakerException(Loc.T("KEF API가 명령을 거부했습니다", "The KEF API rejected the command", "KEF APIがコマンドを拒否しました"));
         }
         return text;
     }

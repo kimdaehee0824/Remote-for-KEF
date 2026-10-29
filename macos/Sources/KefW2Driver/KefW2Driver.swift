@@ -92,7 +92,7 @@ public actor KefW2Driver: SpeakerDriver {
     }
 
     public func read() async throws -> SpeakerSnapshot {
-        guard let authMode, let profile else { throw KefError.invalidResponse("기기 확인 전") }
+        guard let authMode, let profile else { throw KefError.invalidResponse(loc("기기 확인 전", "device not identified yet", "機器の確認前です")) }
         let secure = authMode == .all
         let client = client
         async let source = client.get(Path.source, secure: secure)
@@ -107,7 +107,7 @@ public actor KefW2Driver: SpeakerDriver {
         // Read the input twice; a change in between means the state is not consistent.
         let second = try KefJSON.string(await client.get(Path.source, secure: secure))
         guard first == second else { throw KefError.inconsistentRead }
-        guard (0...100).contains(level) else { throw KefError.invalidResponse("음량 범위 오류") }
+        guard (0...100).contains(level) else { throw KefError.invalidResponse(loc("음량 범위 오류", "volume out of range", "音量が範囲外です")) }
 
         let powerState: PowerState = switch power {
         case "powerOn": .on
@@ -124,7 +124,7 @@ public actor KefW2Driver: SpeakerDriver {
     }
 
     public func setVolume(_ volume: Int) async throws {
-        guard (0...100).contains(volume) else { throw KefError.invalidResponse("음량 범위 오류") }
+        guard (0...100).contains(volume) else { throw KefError.invalidResponse(loc("음량 범위 오류", "volume out of range", "音量が範囲外です")) }
         try await write(Path.volume, .int(volume))
     }
 
@@ -134,7 +134,7 @@ public actor KefW2Driver: SpeakerDriver {
 
     public func setSource(_ sourceId: String) async throws {
         guard let profile, profile.sources.contains(where: { $0.id == sourceId }) else {
-            throw KefError.invalidResponse("지원하지 않는 입력")
+            throw KefError.invalidResponse(loc("지원하지 않는 입력", "unsupported input", "対応していない入力"))
         }
         try await write(Path.source, .physicalSource(sourceId))
     }

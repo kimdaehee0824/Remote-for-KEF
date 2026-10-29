@@ -1,4 +1,5 @@
 import Foundation
+import KefRemoteCore
 
 /// Strict JSON value. Booleans and numbers are kept apart so that `true`
 /// never reads as volume 1 and `"100"` never reads as a number.
@@ -36,7 +37,7 @@ enum KefJSON {
         do {
             return try JSONDecoder().decode(JSONValue.self, from: data)
         } catch {
-            throw KefError.invalidResponse("JSON이 아닌 응답")
+            throw KefError.invalidResponse(loc("JSON이 아닌 응답", "not JSON", "JSONではない応答"))
         }
     }
 
@@ -44,7 +45,7 @@ enum KefJSON {
     static func value(_ json: JSONValue) throws -> JSONValue {
         switch json {
         case let .array(items):
-            guard items.count == 1 else { throw KefError.invalidResponse("예상하지 못한 API 배열") }
+            guard items.count == 1 else { throw KefError.invalidResponse(loc("예상하지 못한 API 배열", "unexpected API array", "想定外のAPI配列")) }
             return try value(items[0])
         case let .object(fields):
             if let error = fields["error"], error != .null, error != .bool(false) {
@@ -59,17 +60,17 @@ enum KefJSON {
     }
 
     static func string(_ json: JSONValue) throws -> String {
-        guard case let .string(text) = try value(json) else { throw KefError.invalidResponse("문자열 응답이 아닙니다") }
+        guard case let .string(text) = try value(json) else { throw KefError.invalidResponse(loc("문자열 응답이 아닙니다", "not a string", "文字列の応答ではありません")) }
         return text
     }
 
     static func int(_ json: JSONValue) throws -> Int {
-        guard case let .int(number) = try value(json) else { throw KefError.invalidResponse("정수 응답이 아닙니다") }
+        guard case let .int(number) = try value(json) else { throw KefError.invalidResponse(loc("정수 응답이 아닙니다", "not an integer", "整数の応答ではありません")) }
         return number
     }
 
     static func bool(_ json: JSONValue) throws -> Bool {
-        guard case let .bool(flag) = try value(json) else { throw KefError.invalidResponse("불리언 응답이 아닙니다") }
+        guard case let .bool(flag) = try value(json) else { throw KefError.invalidResponse(loc("불리언 응답이 아닙니다", "not a Boolean", "ブール値の応答ではありません")) }
         return flag
     }
 

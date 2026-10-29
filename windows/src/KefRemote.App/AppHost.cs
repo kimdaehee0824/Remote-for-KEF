@@ -133,7 +133,7 @@ sealed class AppHost : IDisposable
         if (connecting) return;
         if (!Settings.IsConfigured)
         {
-            Controller.Disconnect("스피커 주소를 입력하세요");
+            Controller.Disconnect(Loc.T("스피커 주소를 입력하세요", "Enter the speaker address", "スピーカーのアドレスを入力してください"));
             return;
         }
         connecting = true;
@@ -308,8 +308,8 @@ sealed class AppHost : IDisposable
         {
             Settings.TrayNoticeShown = true;
             store.Save(Settings);
-            tray.ShowBalloon("Remote for KEF는 알림 영역에서 실행 중입니다",
-                "아이콘을 눌러 음량과 입력을 바꾸세요. 아이콘이 보이지 않으면 작업 표시줄의 ^ 안을 확인하세요.");
+            tray.ShowBalloon(Loc.T("Remote for KEF는 알림 영역에서 실행 중입니다", "Remote for KEF is running in the notification area", "Remote for KEFは通知領域で実行中です"),
+                Loc.T("아이콘을 눌러 음량과 입력을 바꾸세요. 아이콘이 보이지 않으면 작업 표시줄의 ^ 안을 확인하세요.", "Select the icon to change the volume and input. If you can't see it, look behind the ^ on the taskbar.", "アイコンをクリックすると音量と入力を変えられます。アイコンが見当たらない場合は、タスクバーの ^ の中を確認してください。"));
         }
     }
 
@@ -347,8 +347,12 @@ sealed class AppHost : IDisposable
         if (hotkeyWarningShown || environment.SelfTest) return;
         hotkeyWarningShown = true;
         var taken = HotkeyBindings.Where(b => Hotkeys.Status.GetValueOrDefault(b.Action) == HotkeyRegistration.InUse).Select(b => b.ToString());
-        tray.ShowBalloon("단축키를 등록하지 못했습니다",
-            $"다른 앱이 이미 쓰고 있습니다: {string.Join(", ", taken)}. 설정 > 단축키에서 다른 조합으로 바꿀 수 있습니다.");
+        string list = string.Join(Loc.T(", ", ", ", "、"), taken);
+        tray.ShowBalloon(Loc.T("단축키를 등록하지 못했습니다", "Couldn't register shortcuts", "ショートカットを登録できませんでした"),
+            Loc.T(
+                $"다른 앱이 이미 쓰고 있습니다: {list}. 설정 > 단축키에서 다른 조합으로 바꿀 수 있습니다.",
+                $"Another app already uses {list}. You can choose other combinations in Settings > Shortcuts.",
+                $"ほかのアプリがすでに使っています: {list}。設定 > ショートカットで別の組み合わせに変更できます。"));
     }
 
     void RunLater(int milliseconds, Action action)

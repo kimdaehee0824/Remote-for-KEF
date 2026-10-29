@@ -56,6 +56,12 @@ public sealed class SpeakerController : IDisposable
     const int PowerVerifyAttempts = 16, PowerVerifyDelayMs = 500;
     static readonly int[] Backoff = [2000, 5000, 10000, 30000];
 
+    public static string NotConnected => Loc.T("연결 전", "Not connected", "未接続");
+    public static string UnsupportedInput => Loc.T("지원하지 않는 입력: ", "Unsupported input: ", "対応していない入力: ");
+    static string Connected => Loc.T("연결됨", "Connected", "接続済み");
+    static string InStandby => Loc.T("스피커가 대기 상태입니다", "The speaker is in standby", "スピーカーはスタンバイ中です");
+    static string ReachedLimit(int limit) => Loc.T($"상한 {limit}에 닿았습니다", $"Reached the limit {limit}", $"上限 {limit} に達しました");
+
     int generation;
     int failures;
     int appVolumeLimit = 30;
@@ -75,11 +81,14 @@ public sealed class SpeakerController : IDisposable
     public bool Busy { get; private set; }
 
     /// <summary>Connection and device state in words, e.g. for a tooltip. Results of commands go to <see cref="Notice"/>.</summary>
-    public string Status { get; private set; } = "연결 전";
+    public string Status { get; private set; } = NotConnected;
 
     /// <summary>Outcome of the last user command when it needs explaining (refused, capped, kept muted, failed).</summary>
     public string? Notice { get; private set; }
     public bool NoticeIsError { get; private set; }
+
+    /// <summary>The notice is about the volume limit (capped, refused or kept muted because of it).</summary>
+    public bool NoticeIsLimit { get; private set; }
 
     /// <summary><see cref="Clock"/> time the notice was set, so the UI can let it expire.</summary>
     public long NoticeAt { get; private set; }
@@ -155,7 +164,7 @@ public sealed class SpeakerController : IDisposable
     /// <summary>Replace the driver, identify the device and read once. Never writes.</summary>
     public async Task<bool> ConnectAsync(ISpeakerDriver driver)
     {
-        Disconnect("연결 확인 중");
+        Disconnect(Loc.T("연결 확인 중", "Checking the connection", "接続を確認中"));
         Driver = driver;
         int token = generation;
         Busy = true;
@@ -167,13 +176,13 @@ public sealed class SpeakerController : IDisposable
             Device = device;
             await ReadAsync(token);
             failures = 0;
-            Status = State.Active ? "연결됨" : "스피커가 대기 상태입니다";
+            Status = State.Active ? Connected : InStandby;
             return true;
         }
         catch (Exception e) when (token == generation)
         {
             failures++;
-            Fail("연결 실패: " + Describe(e));
+            Fail(Loc.T("연결 실패: ", "Couldn't connect: ", "接続できませんでした: ") + Describe(e));
             return false;
         }
         catch
@@ -246,6 +255,7 @@ public sealed class SpeakerController : IDisposable
         if (Notice == null) return;
         Notice = null;
         NoticeIsError = false;
+        NoticeIsLimit = false;
         Notify();
     }
 
@@ -260,13 +270,13 @@ public sealed class SpeakerController : IDisposable
             await ReadAsync(token);
             failures = 0;
             if (previous.Valid && previous.Active && State.Active && previous.SourceId != State.SourceId)
-                SetNotice("다른 곳에서 입력을 바꿨습니다");
-            Status = State.Active ? "연결됨" : "스피커가 대기 상태입니다";
+                SetNotice(Loc.T("다른 곳에서 입력을 바꿨습니다", "The input was changed elsewhere", "ほかの場所で入力が切り替えられました"));
+            Status = State.Active ? Connected : InStandby;
         }
         catch (Exception e) when (token == generation)
         {
             failures++;
-            Fail("연결 확인 필요: " + Describe(e));
+            Fail(Loc.T("연결 확인 필요: ", "Check the connection: ", "接続を確認してください: ") + Describe(e));
         }
         catch
         {
@@ -336,7 +346,10 @@ public sealed class SpeakerController : IDisposable
         if (!Supports(DriverCapabilities.Mute) || before.Muted == muted) return;
         if (!muted && before.Volume > EffectiveLimit)
         {
-            SetNotice($"음량({before.Volume})이 상한({EffectiveLimit})보다 높아 음소거를 해제하지 않았습니다. 먼저 음량을 낮추세요");
+            SetNotice(Loc.T(
+                $"음량({before.Volume})이 상한({EffectiveLimit})보다 높아 음소거를 해제하지 않았습니다. 먼저 음량을 낮추세요",
+                $"Still muted: the volume ({before.Volume}) is above the limit ({EffectiveLimit}). Lower the volume first",
+                $"音量（{before.Volume}）が上限（{EffectiveLimit}）を超えているため、ミュートを解除しませんでした。先に音量を下げてください"), limit: true);
             return;
         }
         await Driver!.SetMuteAsync(muted, cts.Token);
@@ -346,7 +359,7 @@ public sealed class SpeakerController : IDisposable
     public Task SelectSourceAsync(string sourceId) => Run(SpeakerOperation.Source, sourceId, async (before, token) =>
     {
         if (!Supports(DriverCapabilities.Source)) return;
-        if (!Driver!.Sources.Any(s => s.Id == sourceId)) throw new SpeakerException("지원하지 않는 입력: " + sourceId);
+        if (!Driver!.Sources.Any(s => s.Id == sourceId)) throw new SpeakerException(UnsupportedInput + sourceId);
         await SwitchSource(before, sourceId, token);
     });
 
@@ -357,7 +370,7 @@ public sealed class SpeakerController : IDisposable
     async Task SwitchSource(SpeakerState before, string sourceId, int token)
     {
         if (before.SourceId == sourceId) return;
-        if (!Supports(DriverCapabilities.Mute)) throw new SpeakerException("음소거를 지원하지 않는 기기는 안전하게 입력을 전환할 수 없습니다");
+        if (!Supports(DriverCapabilities.Mute)) throw new SpeakerException(Loc.T("음소거를 지원하지 않는 기기는 안전하게 입력을 전환할 수 없습니다", "Inputs can't be switched safely on a device without mute", "ミュートに対応していない機器では、入力を安全に切り替えられません"));
 
         if (!before.Muted)
         {
@@ -371,7 +384,7 @@ public sealed class SpeakerController : IDisposable
         var after = State;
         if (before.Muted)
         {
-            SetNotice("입력을 바꿨습니다. 원래 음소거 상태를 유지합니다");
+            SetNotice(Loc.T("입력을 바꿨습니다. 원래 음소거 상태를 유지합니다", "Input switched. It stays muted as before", "入力を切り替えました。ミュートは元のままです"));
         }
         else if (after.Volume <= before.Volume && after.Volume <= EffectiveLimit)
         {
@@ -381,7 +394,10 @@ public sealed class SpeakerController : IDisposable
         }
         else
         {
-            SetNotice($"새 입력의 음량({after.Volume})이 이전보다 높거나 상한을 넘어 음소거를 유지했습니다");
+            SetNotice(Loc.T(
+                $"새 입력의 음량({after.Volume})이 이전보다 높거나 상한을 넘어 음소거를 유지했습니다",
+                $"Kept muted: the new input's volume ({after.Volume}) is higher than before or above the limit",
+                $"新しい入力の音量（{after.Volume}）が前より高いか上限を超えているため、ミュートのままにしました"), limit: true);
         }
     }
 
@@ -390,12 +406,12 @@ public sealed class SpeakerController : IDisposable
     {
         if (!Supports(DriverCapabilities.Power))
         {
-            SetNotice("이 기기는 앱에서 전원을 끌 수 없습니다");
+            SetNotice(Loc.T("이 기기는 앱에서 전원을 끌 수 없습니다", "This device can't be turned off from the app", "この機器はアプリから電源を切れません"));
             return;
         }
         await Driver!.SetPowerAsync(false, cts.Token);
         await Verify(token, s => s.Power == PowerState.Standby, PowerVerifyAttempts, PowerVerifyDelayMs, tolerateTransient: true);
-        Status = "스피커가 대기 상태입니다";
+        Status = InStandby;
     });
 
     /// <summary>
@@ -414,22 +430,28 @@ public sealed class SpeakerController : IDisposable
         try
         {
             var before = await ReadAsync(token);
-            if (sourceId != null && !Driver!.Sources.Any(s => s.Id == sourceId)) throw new SpeakerException("지원하지 않는 입력: " + sourceId);
+            if (sourceId != null && !Driver!.Sources.Any(s => s.Id == sourceId)) throw new SpeakerException(UnsupportedInput + sourceId);
             if (!before.Active)
             {
                 if (before.Volume > EffectiveLimit)
                 {
-                    SetNotice($"대기 전 음량({before.Volume})이 상한({EffectiveLimit})보다 높아 켜지 않았습니다. 리모컨이나 KEF Connect로 음량을 낮춘 뒤 켜세요");
+                    SetNotice(Loc.T(
+                        $"대기 전 음량({before.Volume})이 상한({EffectiveLimit})보다 높아 켜지 않았습니다. 리모컨이나 KEF Connect로 음량을 낮춘 뒤 켜세요",
+                        $"Not turned on: the volume before standby ({before.Volume}) is above the limit ({EffectiveLimit}). Lower it with the remote or KEF Connect first",
+                        $"スタンバイ前の音量（{before.Volume}）が上限（{EffectiveLimit}）を超えているため、電源を入れませんでした。リモコンかKEF Connectで音量を下げてから入れてください"), limit: true);
                     return;
                 }
                 await Driver!.SetPowerAsync(true, cts.Token);
                 await Verify(token, s => s.Active && s.SourceId != null, PowerVerifyAttempts, PowerVerifyDelayMs, tolerateTransient: true);
-                Status = "연결됨";
+                Status = Connected;
             }
             var on = State;
             if (on.Volume > EffectiveLimit)
             {
-                SetNotice($"켜졌습니다. 음량({on.Volume})이 상한({EffectiveLimit})보다 높으니 먼저 낮추세요");
+                SetNotice(Loc.T(
+                    $"켜졌습니다. 음량({on.Volume})이 상한({EffectiveLimit})보다 높으니 먼저 낮추세요",
+                    $"Turned on. The volume ({on.Volume}) is above the limit ({EffectiveLimit}); lower it first",
+                    $"電源が入りました。音量（{on.Volume}）が上限（{EffectiveLimit}）を超えているので、先に下げてください"), limit: true);
                 return;
             }
             if (sourceId != null && Supports(DriverCapabilities.Source))
@@ -442,8 +464,8 @@ public sealed class SpeakerController : IDisposable
         catch (Exception e) when (token == generation)
         {
             failures = Math.Max(failures, 1);
-            Fail("조작 중지 (자동 재시도 없음): " + Describe(e));
-            SetNotice("스피커를 켜지 못했습니다: " + Describe(e), error: true);
+            Fail(Loc.T("조작 중지 (자동 재시도 없음): ", "Stopped (no automatic retry): ", "操作を停止しました（自動再試行なし）: ") + Describe(e));
+            SetNotice(Loc.T("스피커를 켜지 못했습니다: ", "Couldn't turn the speaker on: ", "スピーカーの電源を入れられませんでした: ") + Describe(e), error: true);
         }
         catch
         {
@@ -476,10 +498,10 @@ public sealed class SpeakerController : IDisposable
         if (target == before.Volume)
         {
             if (requested > before.Volume)
-                SetNotice(before.Volume > limit ? $"음량이 상한 {limit}보다 높아 올리지 않았습니다" : $"상한 {limit}에 닿았습니다");
+                SetNotice(before.Volume > limit ? Loc.T($"음량이 상한 {limit}보다 높아 올리지 않았습니다", $"Not raised: the volume is above the limit {limit}", $"音量が上限 {limit} を超えているため上げませんでした") : ReachedLimit(limit), limit: true);
             return;
         }
-        if (target == limit && requested > target) SetNotice($"상한 {limit}에 닿았습니다");
+        if (target == limit && requested > target) SetNotice(ReachedLimit(limit), limit: true);
 
         var driver = Driver!;
         if (ApproachFromAbove && target > before.Volume && driver.ApproachOvershoot(before.Volume, target) is int over)
@@ -513,12 +535,12 @@ public sealed class SpeakerController : IDisposable
             var before = await ReadAsync(token);
             if (!before.Active)
             {
-                SetNotice("스피커가 대기 상태라 조작하지 않았습니다");
+                SetNotice(Loc.T("스피커가 대기 상태라 조작하지 않았습니다", "Nothing changed: the speaker is in standby", "スピーカーがスタンバイ中のため操作しませんでした"));
                 return;
             }
             if (before.SourceId != observed.SourceId)
             {
-                SetNotice("다른 곳에서 입력을 바꿔서 조작을 취소했습니다");
+                SetNotice(Loc.T("다른 곳에서 입력을 바꿔서 조작을 취소했습니다", "Cancelled: the input was changed elsewhere", "ほかの場所で入力が切り替えられたため、操作を取り消しました"));
                 return;
             }
             await body(before, token);
@@ -526,8 +548,8 @@ public sealed class SpeakerController : IDisposable
         catch (Exception e) when (token == generation)
         {
             failures = Math.Max(failures, 1);
-            Fail("조작 중지 (자동 재시도 없음): " + Describe(e));
-            SetNotice("조작을 멈췄습니다: " + Describe(e), error: true);
+            Fail(Loc.T("조작 중지 (자동 재시도 없음): ", "Stopped (no automatic retry): ", "操作を停止しました（自動再試行なし）: ") + Describe(e));
+            SetNotice(Loc.T("조작을 멈췄습니다: ", "Stopped: ", "操作を停止しました: ") + Describe(e), error: true);
         }
         catch
         {
@@ -566,14 +588,14 @@ public sealed class SpeakerController : IDisposable
             {
             }
         }
-        throw new SpeakerException("스피커 반영을 확인하지 못했습니다");
+        throw new SpeakerException(Loc.T("스피커 반영을 확인하지 못했습니다", "Couldn't confirm the change on the speaker", "スピーカーへの反映を確認できませんでした"));
     }
 
     async Task<SpeakerState> ReadAsync(int token)
     {
         var s = await Driver!.ReadAsync(cts.Token);
         Check(token);
-        if (s.Volume is < 0 or > 100) throw new SpeakerException("음량 응답 범위 오류");
+        if (s.Volume is < 0 or > 100) throw new SpeakerException(Loc.T("음량 응답 범위 오류", "Volume reply out of range", "音量の応答が範囲外です"));
         State = s with { Valid = true, SeenAt = Clock() };
         if (State.Active && State.SourceId != null) LastActiveSource = State.SourceId;
         return State;
@@ -590,10 +612,11 @@ public sealed class SpeakerController : IDisposable
         Status = reason;
     }
 
-    void SetNotice(string text, bool error = false)
+    void SetNotice(string text, bool error = false, bool limit = false)
     {
         Notice = text;
         NoticeIsError = error;
+        NoticeIsLimit = limit;
         NoticeAt = Clock();
     }
 
@@ -612,14 +635,14 @@ public sealed class SpeakerController : IDisposable
     static string Describe(Exception e) => e switch
     {
         SpeakerException => e.Message,
-        TaskCanceledException or TimeoutException => "응답 시간 초과",
-        HttpRequestException => "네트워크 연결 실패",
+        TaskCanceledException or TimeoutException => Loc.T("응답 시간 초과", "Timed out", "応答がタイムアウトしました"),
+        HttpRequestException => Loc.T("네트워크 연결 실패", "Network connection failed", "ネットワークに接続できませんでした"),
         _ => e.Message,
     };
 
     public void Dispose()
     {
-        Disconnect("종료");
+        Disconnect(Loc.T("종료", "Closed", "終了"));
         cts.Dispose();
     }
 }

@@ -78,6 +78,10 @@ extension KefFinish {
         KefFinish(id: "xio/slate-black", model: "XIO", name: "Slate Black", cabinet: 0x34312C, trim: 0x25231F, cone: 0x2C2A25, tweeter: 0x25231F),
     ]
 
+    /// The app's own colors when no finish is picked, also those of the Windows app icon:
+    /// LS60 Wireless Royal Blue, which sits well next to the default blue accent of macOS and Windows.
+    public static let appDefault = all.first { $0.id == "ls60-wireless/royal-blue" }!
+
     /// The finishes of a model by its display name, or every finish when the model is not in the table.
     public static func finishes(for model: String?) -> [KefFinish] {
         let own = all.filter { $0.model == model }

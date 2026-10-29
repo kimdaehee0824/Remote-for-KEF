@@ -83,13 +83,13 @@ public static class KefW2Protocol
     {
         if (e.ValueKind == JsonValueKind.Array)
         {
-            if (e.GetArrayLength() != 1) throw new SpeakerException("예상하지 못한 KEF API 배열");
+            if (e.GetArrayLength() != 1) throw new SpeakerException(Loc.T("예상하지 못한 KEF API 배열", "Unexpected KEF API array", "予期しないKEF APIの配列"));
             return Unwrap(e[0]);
         }
         if (e.ValueKind == JsonValueKind.Object)
         {
             if (e.TryGetProperty("error", out var err) && err.ValueKind is not (JsonValueKind.Null or JsonValueKind.False))
-                throw new SpeakerException("KEF API 오류");
+                throw new SpeakerException(Loc.T("KEF API 오류", "KEF API error", "KEF APIエラー"));
             if (e.TryGetProperty("value", out var v)) return Unwrap(v);
             if (e.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String && e.TryGetProperty(t.GetString()!, out var inner))
                 return inner;
@@ -104,13 +104,13 @@ public static class KefW2Protocol
     public static string ReadString(JsonElement e)
     {
         var v = Unwrap(e);
-        return v.ValueKind == JsonValueKind.String ? v.GetString()! : throw new SpeakerException("문자열 응답이 아닙니다");
+        return v.ValueKind == JsonValueKind.String ? v.GetString()! : throw new SpeakerException(Loc.T("문자열 응답이 아닙니다", "Not a string reply", "文字列の応答ではありません"));
     }
 
     public static int ReadInt(JsonElement e)
     {
         var v = Unwrap(e);
-        return v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : throw new SpeakerException("정수 응답이 아닙니다");
+        return v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : throw new SpeakerException(Loc.T("정수 응답이 아닙니다", "Not an integer reply", "整数の応答ではありません"));
     }
 
     public static bool ReadBool(JsonElement e)
@@ -120,7 +120,7 @@ public static class KefW2Protocol
         {
             JsonValueKind.True => true,
             JsonValueKind.False => false,
-            _ => throw new SpeakerException("불리언 응답이 아닙니다"),
+            _ => throw new SpeakerException(Loc.T("불리언 응답이 아닙니다", "Not a boolean reply", "真偽値の応答ではありません")),
         };
     }
 

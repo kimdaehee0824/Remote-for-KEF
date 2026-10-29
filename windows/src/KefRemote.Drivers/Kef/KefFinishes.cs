@@ -64,6 +64,12 @@ public static class KefFinishes
         new("xio/slate-black", "XIO", "Slate Black", 0x34312C, 0x25231F, 0x2C2A25, 0x25231F),
     ];
 
+    /// <summary>
+    /// The app's own colors when no finish is picked, also those of Assets/AppIcon.ico: LS60 Wireless Royal Blue,
+    /// which sits well next to the default blue accent of Windows and macOS.
+    /// </summary>
+    public static readonly KefFinish Default = All.Single(f => f.Id == "ls60-wireless/royal-blue");
+
     /// <summary>The finishes of a model by its display name, or every finish when the model is not in the table.</summary>
     public static IReadOnlyList<KefFinish> For(string? model)
     {

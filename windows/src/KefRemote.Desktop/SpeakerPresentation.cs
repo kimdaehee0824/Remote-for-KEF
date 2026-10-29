@@ -18,6 +18,11 @@ public enum StatusGlyph
 /// </summary>
 public static class SpeakerPresentation
 {
+    public static string Standby => Loc.T("대기", "Standby", "スタンバイ");
+    public static string Offline => Loc.T("연결 끊김", "Offline", "オフライン");
+    static string Connecting => Loc.T("연결하는 중", "Connecting", "接続中");
+    static string SetUp => Loc.T("스피커를 설정하세요", "Set up your speaker", "スピーカーを設定してください");
+
     public static StatusGlyph Glyph(SpeakerController c) => c.Phase switch
     {
         SpeakerPhase.On => c.State.Muted ? StatusGlyph.Muted : StatusGlyph.On,
@@ -30,23 +35,23 @@ public static class SpeakerPresentation
     /// <summary>Second header line: the model normally, the state only when it is not the ordinary "on".</summary>
     public static string Subtitle(SpeakerController c, bool configured)
     {
-        if (!configured) return "스피커를 설정하세요";
+        if (!configured) return SetUp;
         switch (c.Operation)
         {
             case SpeakerOperation.Source when c.OperationSource != null:
                 string label = ShortLabel(SourceLabel(c, c.OperationSource));
-                return $"{label}{Korean.Ro(label)} 바꾸는 중";
+                return Loc.T($"{label}{Korean.Ro(label)} 바꾸는 중", $"Switching to {label}", $"{label}に切り替え中");
             case SpeakerOperation.PowerOn:
-                return "켜는 중";
+                return Loc.T("켜는 중", "Turning on", "電源を入れています");
             case SpeakerOperation.PowerOff:
-                return "끄는 중";
+                return Loc.T("끄는 중", "Turning off", "電源を切っています");
         }
         return c.Phase switch
         {
             SpeakerPhase.On => c.Device?.Model ?? "",
-            SpeakerPhase.Standby => "대기",
-            SpeakerPhase.Offline => "연결 끊김",
-            _ => "연결하는 중",
+            SpeakerPhase.Standby => Standby,
+            SpeakerPhase.Offline => Offline,
+            _ => Connecting,
         };
     }
 
@@ -54,20 +59,21 @@ public static class SpeakerPresentation
         configured && c.Operation == SpeakerOperation.None && c.Phase == SpeakerPhase.Offline;
 
     /// <summary>"상한 30" plus where the number comes from.</summary>
-    public static string LimitSource(SpeakerController c) => c.LimitFromDevice ? "KEF 기기 설정" : "앱 설정";
+    public static string LimitSource(SpeakerController c) =>
+        c.LimitFromDevice ? Loc.T("KEF 기기 설정", "KEF device setting", "KEF機器の設定") : Loc.T("앱 설정", "app setting", "アプリの設定");
 
     /// <summary>Tray tooltip, at most 127 characters: name on the first line, the essentials on the second.</summary>
     public static string Tooltip(SpeakerController c, bool configured)
     {
         string first = configured ? Title(c) : "Remote for KEF";
-        string second = !configured ? "스피커를 설정하세요" : c.Phase switch
+        string second = !configured ? SetUp : c.Phase switch
         {
             SpeakerPhase.On => c.State.Muted
-                ? $"음소거, {SourceLabel(c, c.State.SourceId)}"
-                : $"음량 {c.State.Volume}, {SourceLabel(c, c.State.SourceId)}",
-            SpeakerPhase.Standby => "대기",
-            SpeakerPhase.Offline => "연결 끊김",
-            _ => "연결하는 중",
+                ? Loc.T("음소거", "Muted", "ミュート") + Loc.T(", ", ", ", "、") + SourceLabel(c, c.State.SourceId)
+                : Loc.T($"음량 {c.State.Volume}, ", $"Volume {c.State.Volume}, ", $"音量 {c.State.Volume}、") + SourceLabel(c, c.State.SourceId),
+            SpeakerPhase.Standby => Standby,
+            SpeakerPhase.Offline => Offline,
+            _ => Connecting,
         };
         string text = first + "\n" + second;
         return text.Length > 127 ? text[..127] : text;

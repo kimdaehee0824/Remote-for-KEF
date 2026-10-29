@@ -59,7 +59,7 @@ Other players are not bundled because nobody on the project could test them. Can
 
 ## Adding a driver
 
-1. Create `windows/src/KefRemote.Drivers/<Vendor>/<Vendor>Driver.cs` implementing `ISpeakerDriver`. Derive from `HttpDriver` for HTTP devices.
+1. Create `windows/src/KefRemote.Drivers/<Vendor>/<Vendor>Driver.cs` implementing `ISpeakerDriver`. Derive from `HttpDriver` for HTTP devices. Text the user can see (error messages, the descriptor's name and description) comes in the three UI languages: `Loc.T(korean, english, japanese)`, or `loc(korean, english, japanese)` in Swift.
 2. Expose a `DriverDescriptor` (id, display name, supported models, status, whether a password is used, factory) and add it to `BuiltInDrivers.All`.
 3. Add stub tests in `windows/tests/KefRemote.Tests` (see `KefW2DriverTests.cs` and `FakeKefDevice.cs` for an in-memory device). Mark the driver `Experimental` until the safe hardware checks below pass on a real device, and include the results in the pull request.
 4. If the protocol has non-obvious parts (crypto, signing), document it in `docs/protocol/` and add language-neutral vectors to `spec/test-vectors/` so the macOS implementation can share them.

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using KefRemote.Core;
 
 namespace KefRemote.Desktop;
 
@@ -80,18 +81,18 @@ public sealed class HotkeyBinding
     public string? Validate()
     {
         if (!IsAssigned) return null;
-        if (VirtualKeys.IsModifier(Key)) return "수정 키만으로는 단축키를 만들 수 없습니다";
+        if (VirtualKeys.IsModifier(Key)) return Loc.T("수정 키만으로는 단축키를 만들 수 없습니다", "A shortcut needs a key besides the modifiers", "修飾キーだけではショートカットにできません");
         var withoutWin = Modifiers & ~HotkeyModifiers.Win;
         if (withoutWin == HotkeyModifiers.None && !VirtualKeys.IsStandalone(Key))
-            return "Ctrl, Alt, Shift 중 하나 이상을 함께 눌러 주세요";
+            return Loc.T("Ctrl, Alt, Shift 중 하나 이상을 함께 눌러 주세요", "Press it together with Ctrl, Alt or Shift", "Ctrl、Alt、Shift のいずれかと一緒に押してください");
         if (withoutWin == HotkeyModifiers.Shift && !VirtualKeys.IsStandalone(Key) && !VirtualKeys.IsFunctionKey(Key))
-            return "Shift만 조합하면 일반 입력과 겹칩니다. Ctrl 또는 Alt를 함께 눌러 주세요";
+            return Loc.T("Shift만 조합하면 일반 입력과 겹칩니다. Ctrl 또는 Alt를 함께 눌러 주세요", "Shift alone clashes with typing. Add Ctrl or Alt", "Shift だけの組み合わせは通常の入力と重なります。Ctrl か Alt も一緒に押してください");
         return null;
     }
 
     public override string ToString()
     {
-        if (!IsAssigned) return "없음";
+        if (!IsAssigned) return Loc.T("없음", "None", "なし");
         var parts = new List<string>(5);
         if (Modifiers.HasFlag(HotkeyModifiers.Control)) parts.Add("Ctrl");
         if (Modifiers.HasFlag(HotkeyModifiers.Alt)) parts.Add("Alt");
@@ -103,9 +104,9 @@ public sealed class HotkeyBinding
 
     public static string ActionName(HotkeyAction action) => action switch
     {
-        HotkeyAction.VolumeUp => "음량 올리기",
-        HotkeyAction.VolumeDown => "음량 내리기",
-        HotkeyAction.ToggleMute => "음소거 / 해제",
+        HotkeyAction.VolumeUp => Loc.T("음량 올리기", "Volume up", "音量を上げる"),
+        HotkeyAction.VolumeDown => Loc.T("음량 내리기", "Volume down", "音量を下げる"),
+        HotkeyAction.ToggleMute => Loc.T("음소거 / 해제", "Mute / unmute", "ミュート / 解除"),
         _ => action.ToString(),
     };
 
@@ -121,7 +122,10 @@ public sealed class HotkeyBinding
             for (int j = 0; j < i; j++)
             {
                 if (bindings[i].SameChord(bindings[j]))
-                    return $"{ActionName(bindings[j].Action)}와 {ActionName(bindings[i].Action)}에 같은 단축키({bindings[i]})가 지정되어 있습니다";
+                    return Loc.T(
+                        $"{ActionName(bindings[j].Action)}와 {ActionName(bindings[i].Action)}에 같은 단축키({bindings[i]})가 지정되어 있습니다",
+                        $"{ActionName(bindings[j].Action)} and {ActionName(bindings[i].Action)} have the same shortcut ({bindings[i]})",
+                        $"{ActionName(bindings[j].Action)}と{ActionName(bindings[i].Action)}に同じショートカット（{bindings[i]}）が割り当てられています");
             }
         }
         return null;
@@ -170,19 +174,19 @@ public static class VirtualKeys
             case Back: return "Backspace";
             case Pause: return "Pause";
             case Scroll: return "Scroll Lock";
-            case Apps: return "메뉴";
+            case Apps: return Loc.T("메뉴", "Menu", "メニュー");
             case Multiply: return "Num *";
             case Add: return "Num +";
             case Subtract: return "Num -";
             case Decimal: return "Num .";
             case Divide: return "Num /";
-            case VolumeMute: return "음소거 키";
-            case VolumeDown: return "볼륨 내림 키";
-            case VolumeUp: return "볼륨 올림 키";
-            case 0xB0: return "다음 트랙 키";
-            case 0xB1: return "이전 트랙 키";
-            case 0xB2: return "정지 키";
-            case MediaPlayPause: return "재생/일시정지 키";
+            case VolumeMute: return Loc.T("음소거 키", "Mute key", "ミュートキー");
+            case VolumeDown: return Loc.T("볼륨 내림 키", "Volume Down key", "音量ダウンキー");
+            case VolumeUp: return Loc.T("볼륨 올림 키", "Volume Up key", "音量アップキー");
+            case 0xB0: return Loc.T("다음 트랙 키", "Next Track key", "次のトラックキー");
+            case 0xB1: return Loc.T("이전 트랙 키", "Previous Track key", "前のトラックキー");
+            case 0xB2: return Loc.T("정지 키", "Stop key", "停止キー");
+            case MediaPlayPause: return Loc.T("재생/일시정지 키", "Play/Pause key", "再生/一時停止キー");
             case 0xBA: return ";";
             case 0xBB: return "=";
             case 0xBC: return ",";
@@ -198,6 +202,6 @@ public static class VirtualKeys
         if (vk is >= 0x30 and <= 0x39 or >= 0x41 and <= 0x5A) return ((char)vk).ToString();
         if (vk is >= NumPad0 and <= NumPad0 + 9) return "Num " + (vk - NumPad0);
         if (IsFunctionKey(vk)) return "F" + (vk - F1 + 1);
-        return $"키 0x{vk:X2}";
+        return Loc.T("키", "Key", "キー") + $" 0x{vk:X2}";
     }
 }

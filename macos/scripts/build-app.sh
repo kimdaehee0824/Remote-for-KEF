@@ -17,6 +17,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/KEFRemote" "$APP/Contents/MacOS/KEFRemote"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# Info.plist text per language; the folders also tell macOS which languages the app has.
+cp -R Resources/*.lproj "$APP/Contents/Resources/"
 
 # App icon made in Icon Composer, saved as Resources/AppIcon.icon. Compiling it needs
 # actool from Xcode 26; without it the app builds with the generic icon.

@@ -11,7 +11,7 @@ public static class HostAddress
     public static string ParseLocal(string? text)
     {
         if (!IPAddress.TryParse(text?.Trim(), out var ip) || ip.AddressFamily != AddressFamily.InterNetwork || !IsLocal(ip))
-            throw new SpeakerException("사설 네트워크의 IPv4 주소를 입력하세요 (예: 192.168.0.14)");
+            throw new SpeakerException(Loc.T("사설 네트워크의 IPv4 주소를 입력하세요 (예: 192.168.0.14)", "Enter a private IPv4 address (e.g. 192.168.0.14)", "プライベートネットワークのIPv4アドレスを入力してください（例: 192.168.0.14）"));
         return ip.ToString();
     }
 

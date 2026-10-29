@@ -33,6 +33,8 @@ open "build/Remote for KEF.app"
 
 **Self-test**: `"build/Remote for KEF.app/Contents/MacOS/KEFRemote" --self-test <folder>` drives the real panel and settings against a simulated LSX II LT, saves a PNG of each state and `report.txt`, and exits with 0 only if every step passed. CI runs it on each push. The captures are drawn offscreen without screen recording permission, so system materials such as Liquid Glass do not appear in them.
 
+**Language**: the UI is in Korean, English or Japanese, the first of them in the system's preferred languages (English when none is listed). `--lang ko|en|ja` picks one at launch, also together with `--self-test`; CI runs the self-test in all three.
+
 ## Layout
 
 | Target | Platform | Contents |

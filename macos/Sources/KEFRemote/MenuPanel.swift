@@ -1,5 +1,6 @@
 import AppKit
 import KefRemoteCore
+import KefW2Driver
 import SwiftUI
 
 /// Menu bar panel (design M1-M4). One place per fact: the switch says power,
@@ -45,18 +46,18 @@ struct MenuPanel: View {
         switch controller.phase {
         case .idle:
             PanelMessage(
-                title: "스피커를 연결하세요",
-                text: "설정에서 스피커의 IP 주소를 입력하면 여기서 바로 음량과 입력을 바꿀 수 있습니다."
+                title: loc("스피커를 연결하세요", "Connect a speaker", "スピーカーを接続してください"),
+                text: loc("설정에서 스피커의 IP 주소를 입력하면 여기서 바로 음량과 입력을 바꿀 수 있습니다.", "Enter the speaker's IP address in Settings to change the volume and input right here.", "設定でスピーカーのIPアドレスを入力すると、ここで音量と入力をすぐに変えられます。")
             ) {
-                Button("스피커 설정…") { showSettings(.speaker) }
+                Button(loc("스피커 설정…", "Speaker Settings…", "スピーカーの設定…")) { showSettings(.speaker) }
             }
         case .offline:
             PanelMessage(
-                title: "스피커가 응답하지 않습니다",
-                text: "스피커 전원과 Wi-Fi 연결을 확인하세요. 같은 네트워크인데도 안 되면 시스템 설정에서 로컬 네트워크 권한을 확인하세요. 잠시 뒤 자동으로 다시 시도합니다."
+                title: loc("스피커가 응답하지 않습니다", "The speaker isn't responding", "スピーカーが応答しません"),
+                text: loc("스피커 전원과 Wi-Fi 연결을 확인하세요. 같은 네트워크인데도 안 되면 시스템 설정에서 로컬 네트워크 권한을 확인하세요. 잠시 뒤 자동으로 다시 시도합니다.", "Check the speaker's power and Wi-Fi connection. If it's on the same network and still can't be reached, check Local Network access in System Settings. The app retries in a moment.", "スピーカーの電源とWi-Fi接続を確認してください。同じネットワークなのに接続できない場合は、システム設定でローカルネットワークへのアクセスを確認してください。しばらくすると自動で再試行します。")
             ) {
-                Button("다시 연결") { model.connect() }
-                Button("스피커 설정…") { showSettings(.speaker) }
+                Button(loc("다시 연결", "Reconnect", "再接続")) { model.connect() }
+                Button(loc("스피커 설정…", "Speaker Settings…", "スピーカーの設定…")) { showSettings(.speaker) }
             }
         case .connecting, .online:
             if let state = controller.snapshot, let device = controller.device {
@@ -71,7 +72,7 @@ struct MenuPanel: View {
             } else {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("스피커 상태를 읽는 중").foregroundStyle(.secondary)
+                    Text(loc("스피커 상태를 읽는 중", "Reading the speaker's status", "スピーカーの状態を読み込み中")).foregroundStyle(.secondary)
                 }
             }
         }
@@ -93,22 +94,12 @@ private struct PanelHeader: View {
         let controller = model.controller
         let isOn = controller.isOnline && controller.snapshot?.power == .on
         HStack(spacing: 10) {
-            Group {
-                if let finish = model.speakerFinish {
-                    // The speaker in the finish picked in settings, dimmed while it is not on.
-                    Image(nsImage: SpeakerArt.image(finish, size: 24))
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(Color.secondary.opacity(0.12)))
-                        .opacity(isOn ? 1 : 0.6)
-                } else {
-                    Image(nsImage: MenuBarGlyph.on.image)
-                        .renderingMode(.template)
-                        .foregroundStyle(isOn ? Color.white : Color.secondary)
-                        .frame(width: 30, height: 30)
-                        .background(Circle().fill(isOn ? Color.accentColor : Color.secondary.opacity(0.18)))
-                }
-            }
-            .accessibilityHidden(true)
+            // The speaker in the finish picked in settings, or the app's Royal Blue, dimmed while it is not on.
+            Image(nsImage: SpeakerArt.image(model.speakerFinish ?? .appDefault, size: 24))
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Color.secondary.opacity(0.12)))
+                .opacity(isOn ? 1 : 0.6)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(controller.device?.name.nonEmpty ?? "Remote for KEF")
                     .font(.headline)
@@ -119,11 +110,11 @@ private struct PanelHeader: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Toggle("전원", isOn: powerBinding(controller))
+            Toggle(loc("전원", "Power", "電源"), isOn: powerBinding(controller))
                 .toggleStyle(.switch)
                 .labelsHidden()
                 .disabled(!canTogglePower(controller))
-                .help(controller.snapshot?.power == .on ? "대기 상태로 끄기" : "마지막 입력으로 켜기")
+                .help(controller.snapshot?.power == .on ? loc("대기 상태로 끄기", "Turn off to standby", "スタンバイにする") : loc("마지막 입력으로 켜기", "Turn on with the last input", "最後の入力で電源を入れる"))
         }
     }
 
@@ -131,25 +122,25 @@ private struct PanelHeader: View {
         switch c.activity {
         case let .source(id)?:
             let name = SourceNames.short(c.device?.sources.first { $0.id == id }?.name ?? id)
-            return "\(name)\(Korean.ro(name)) 바꾸는 중"
+            return loc("\(name)\(Korean.ro(name)) 바꾸는 중", "Switching to \(name)", "\(name)に切り替え中")
         case .powerOn?:
-            return "켜는 중"
+            return loc("켜는 중", "Turning on", "電源を入れています")
         case .powerOff?:
-            return "끄는 중"
+            return loc("끄는 중", "Turning off", "電源を切っています")
         default:
             break
         }
         switch c.phase {
         case .idle:
-            return "스피커를 설정하세요"
+            return loc("스피커를 설정하세요", "Set up your speaker", "スピーカーを設定してください")
         case .connecting:
-            return c.snapshot == nil ? "연결하는 중" : (c.device?.model ?? "")
+            return c.snapshot == nil ? loc("연결하는 중", "Connecting", "接続中") : (c.device?.model ?? "")
         case .offline:
-            return "연결 끊김"
+            return loc("연결 끊김", "Offline", "オフライン")
         case .online:
             guard let device = c.device else { return "" }
-            if c.snapshot?.power == .standby { return "대기" }
-            return device.verifiedModel ? device.model : "\(device.model) (미검증 모델)"
+            if c.snapshot?.power == .standby { return loc("대기", "Standby", "スタンバイ") }
+            return device.verifiedModel ? device.model : loc("\(device.model) (미검증 모델)", "\(device.model) (unverified model)", "\(device.model)（未検証のモデル）")
         }
     }
 
@@ -199,7 +190,7 @@ private struct VolumeSection: View {
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("음량").font(.headline)
+                Text(loc("음량", "Volume", "音量")).font(.headline)
                 Spacer()
                 Text("\(shown)")
                     .font(.title2.weight(.semibold))
@@ -215,31 +206,31 @@ private struct VolumeSection: View {
                         .frame(width: 18)
                 }
                 .buttonStyle(.borderless)
-                .help(state.muted ? "음소거 해제" : "음소거")
-                .accessibilityLabel(state.muted ? "음소거 해제" : "음소거")
+                .help(state.muted ? loc("음소거 해제", "Unmute", "ミュート解除") : loc("음소거", "Mute", "ミュート"))
+                .accessibilityLabel(state.muted ? loc("음소거 해제", "Unmute", "ミュート解除") : loc("음소거", "Mute", "ミュート"))
 
                 // No `step`: on macOS it draws 101 tick marks. The binding rounds to whole numbers.
                 Slider(value: binding(controller, limit: limit), in: 0...100) {
-                    Text("음량")
+                    Text(loc("음량", "Volume", "音量"))
                 } onEditingChanged: { editing in
                     isDragging = editing
                     if !editing { draft = nil }
                 }
                 .labelsHidden()
                 .background(LimitMark(limit: limit))
-                .accessibilityValue("\(shown), 상한 \(limit)")
+                .accessibilityValue(loc("\(shown), 상한 \(limit)", "\(shown), limit \(limit)", "\(shown)、上限 \(limit)"))
             }
             HStack {
                 if state.volume > limit {
-                    Text(wrapping: "현재 음량이 상한(\(limit))보다 높습니다. 낮추기만 할 수 있습니다.")
+                    Text(wrapping: loc("현재 음량이 상한(\(limit))보다 높습니다. 낮추기만 할 수 있습니다.", "The volume is above the limit (\(limit)). You can only lower it.", "現在の音量が上限（\(limit)）を超えています。下げる操作だけできます。"))
                         .foregroundStyle(.orange)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("상한 \(limit) (\(controller.limitFromDevice ? "KEF 기기 설정" : "앱 설정"))")
+                    Text(verbatim: LimitText.describe(limit, controller))
                         .foregroundStyle(.secondary)
                     Spacer()
                     if switching {
-                        Text("바꾸는 동안 잠시 음소거").foregroundStyle(.secondary)
+                        Text(loc("바꾸는 동안 잠시 음소거", "Muted briefly while switching", "切り替え中は一時的にミュート")).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -269,8 +260,8 @@ private struct VolumeSection: View {
     }
 }
 
-/// Orange tick at the limit with the range above it hatched, drawn behind the
-/// system slider's track.
+/// A tick at the limit with the range above it hatched, drawn behind the system
+/// slider's track. Neutral, so the accent stays the only color in the panel.
 private struct LimitMark: View {
     let limit: Int
     /// Half the knob width: where the track's 0 and 100 sit inside the control.
@@ -285,12 +276,12 @@ private struct LimitMark: View {
             if limit < 100 {
                 ZStack(alignment: .topLeading) {
                     Hatching()
-                        .stroke(Color.orange.opacity(0.45), lineWidth: 1)
+                        .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
                         .frame(width: max(0, proxy.size.width - inset - x), height: 10)
                         .clipShape(RoundedRectangle(cornerRadius: 2))
                         .offset(x: x, y: mid - 5)
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(Color.orange)
+                        .fill(Color.secondary)
                         .frame(width: 2, height: 14)
                         .offset(x: x - 1, y: mid - 7)
                 }
@@ -325,7 +316,7 @@ private struct SourceSection: View {
         let controller = model.controller
         let switchingTo = controller.activity.switchingSource
         VStack(alignment: .leading, spacing: 2) {
-            Text("입력").font(.headline).padding(.bottom, 4)
+            Text(loc("입력", "Input", "入力")).font(.headline).padding(.bottom, 4)
             ForEach(device.sources) { source in
                 SourceRow(
                     source: source,
@@ -338,7 +329,7 @@ private struct SourceSection: View {
                 }
             }
             if switchingTo != nil {
-                Text(wrapping: "전환이 끝나면 음량을 확인하고 음소거를 풉니다. 새 입력이 더 크면 음소거를 유지합니다.")
+                Text(wrapping: loc("전환이 끝나면 음량을 확인하고 음소거를 풉니다. 새 입력이 더 크면 음소거를 유지합니다.", "When the switch is done, the app checks the volume and unmutes. If the new input is louder, it stays muted.", "切り替えが終わると音量を確認してミュートを解除します。新しい入力のほうが大きい場合はミュートのままにします。"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -359,12 +350,12 @@ private struct StandbySection: View {
         let wakingTo = controller.activity.wakingSource(last: controller.lastActiveSource)
         VStack(alignment: .leading, spacing: 2) {
             if device.capabilities.contains(.source), device.sources.count > 1 {
-                Text("이 입력으로 켜기").font(.headline).padding(.bottom, 4)
+                Text(loc("이 입력으로 켜기", "Turn on with this input", "この入力で電源を入れる")).font(.headline).padding(.bottom, 4)
                 ForEach(device.sources) { source in
                     SourceRow(
                         source: source,
                         selected: false,
-                        detail: controller.lastActiveSource == source.id ? "마지막 입력" : nil,
+                        detail: controller.lastActiveSource == source.id ? loc("마지막 입력", "Last input", "最後の入力") : nil,
                         inProgress: wakingTo == source.id,
                         dimmed: wakingTo != nil && wakingTo != source.id,
                         disabled: controller.isBusy || !canPower
@@ -374,8 +365,8 @@ private struct StandbySection: View {
                 }
             }
             Text(wrapping: canPower
-                ? "켜기 전에 음량이 상한 이하인지 확인합니다. 대기 전 음량이 상한보다 높으면 켜지 않고 이유를 알려 드립니다."
-                : "이 기기는 앱에서 켤 수 없습니다. 리모컨이나 KEF Connect로 켜 주세요.")
+                ? loc("켜기 전에 음량이 상한 이하인지 확인합니다. 대기 전 음량이 상한보다 높으면 켜지 않고 이유를 알려 드립니다.", "Before turning on, the app checks that the volume is within the limit. If the volume before standby is above it, the speaker stays off and the app says why.", "電源を入れる前に、音量が上限以下か確認します。スタンバイ前の音量が上限を超えている場合は電源を入れず、理由をお知らせします。")
+                : loc("이 기기는 앱에서 켤 수 없습니다. 리모컨이나 KEF Connect로 켜 주세요.", "This device can't be turned on from the app. Turn it on with the remote or KEF Connect.", "この機器はアプリから電源を入れられません。リモコンかKEF Connectで入れてください。"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -458,17 +449,17 @@ private struct PanelFooter: View {
     var body: some View {
         let buttons = HStack(spacing: 8) {
             Button(action: openSettings) {
-                Text("설정").frame(maxWidth: .infinity)
+                Text(loc("설정", "Settings", "設定")).frame(maxWidth: .infinity)
             }
             .keyboardShortcut(",", modifiers: .command)
-            .help("설정 (⌘,)")
+            .help(loc("설정", "Settings", "設定") + " (⌘,)")
             Button {
                 NSApp.terminate(nil)
             } label: {
-                Text("종료").frame(maxWidth: .infinity)
+                Text(loc("종료", "Quit", "終了")).frame(maxWidth: .infinity)
             }
             .keyboardShortcut("q", modifiers: .command)
-            .help("Remote for KEF 종료 (⌘Q)")
+            .help(loc("Remote for KEF 종료", "Quit Remote for KEF", "Remote for KEFを終了") + " (⌘Q)")
         }
         .controlSize(.large)
 
@@ -529,5 +520,18 @@ private extension Optional where Wrapped == SpeakerController.Activity {
     func wakingSource(last: String?) -> String? {
         if case let .powerOn(id)? = self { return id ?? last }
         return nil
+    }
+}
+
+/// Where the limit in effect comes from, and "Limit 30 (app setting)" for the panel.
+enum LimitText {
+    static func source(_ controller: SpeakerController) -> String {
+        controller.limitFromDevice
+            ? loc("KEF 기기 설정", "KEF device setting", "KEF機器の設定")
+            : loc("앱 설정", "app setting", "アプリの設定")
+    }
+
+    static func describe(_ limit: Int, _ controller: SpeakerController) -> String {
+        loc("상한 \(limit)", "Limit \(limit)", "上限 \(limit)") + " (\(source(controller)))"
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import KefRemoteCore
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -17,15 +18,15 @@ public enum KefError: Error, Equatable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .invalidHost: "사설 네트워크의 IPv4 주소를 입력하세요"
-        case .unauthorized: "인증 거부: 스피커 웹페이지 암호와 Mac 시간을 확인하세요"
-        case .loginPage: "JSON 대신 로그인 페이지가 반환되었습니다"
+        case .invalidHost: loc("사설 네트워크의 IPv4 주소를 입력하세요", "Enter an IPv4 address on your private network", "プライベートネットワークのIPv4アドレスを入力してください")
+        case .unauthorized: loc("인증 거부: 스피커 웹페이지 암호와 Mac 시간을 확인하세요", "Authentication refused: check the speaker web page password and the Mac's clock", "認証が拒否されました: スピーカーのWebページのパスワードとMacの時刻を確認してください")
+        case .loginPage: loc("JSON 대신 로그인 페이지가 반환되었습니다", "Got a login page instead of JSON", "JSONの代わりにログインページが返されました")
         case let .http(code): "KEF HTTP \(code)"
-        case let .invalidResponse(detail): "응답 형식 오류: \(detail)"
-        case .rejected: "KEF API가 명령을 거부했습니다"
-        case let .unsupportedAuthMode(mode): "지원하지 않는 인증 방식: \(mode)"
-        case .inconsistentRead: "입력 변경 중: 다음 상태 확인까지 제어 중지"
-        case .crypto: "암호화 처리 실패"
+        case let .invalidResponse(detail): loc("응답 형식 오류: \(detail)", "Unexpected response: \(detail)", "応答の形式が正しくありません: \(detail)")
+        case .rejected: loc("KEF API가 명령을 거부했습니다", "The KEF API rejected the command", "KEF APIが操作を拒否しました")
+        case let .unsupportedAuthMode(mode): loc("지원하지 않는 인증 방식: \(mode)", "Unsupported authentication: \(mode)", "対応していない認証方式: \(mode)")
+        case .inconsistentRead: loc("입력 변경 중: 다음 상태 확인까지 제어 중지", "Input changing: paused until the next status check", "入力の切り替え中: 次の状態確認まで操作を停止します")
+        case .crypto: loc("암호화 처리 실패", "Encryption failed", "暗号化に失敗しました")
         case let .network(detail): detail
         }
     }
@@ -104,7 +105,7 @@ struct KefW2Client: Sendable {
             authorization = KefCrypto.authorization(url: url, body: nil, salt: salt, key: key, timestamp: timestamp())
         }
         guard let json = try await send(method: "GET", url: url, body: nil, authorization: authorization) else {
-            throw KefError.invalidResponse("빈 응답")
+            throw KefError.invalidResponse(loc("빈 응답", "empty response", "空の応答"))
         }
         return json
     }
@@ -153,11 +154,11 @@ struct KefW2Client: Sendable {
 
         if response.statusCode == 401 || response.statusCode == 403 { throw KefError.unauthorized }
         guard (200..<300).contains(response.statusCode) else { throw KefError.http(response.statusCode) }
-        guard data.count <= Self.maxResponseBytes else { throw KefError.invalidResponse("응답이 너무 큽니다") }
+        guard data.count <= Self.maxResponseBytes else { throw KefError.invalidResponse(loc("응답이 너무 큽니다", "response too large", "応答が大きすぎます")) }
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("<") { throw KefError.loginPage }
         if text.isEmpty {
-            if method == "GET" { throw KefError.invalidResponse("빈 응답") }
+            if method == "GET" { throw KefError.invalidResponse(loc("빈 응답", "empty response", "空の応答")) }
             return nil
         }
         let json = try KefJSON.decode(Data(text.utf8))
@@ -168,12 +169,12 @@ struct KefW2Client: Sendable {
     }
 
     static func describeNetwork(_ error: any Error) -> String {
-        guard let error = error as? URLError else { return "네트워크 오류" }
+        guard let error = error as? URLError else { return loc("네트워크 오류", "Network error", "ネットワークエラー") }
         switch error.code {
-        case .timedOut: return "응답 시간 초과: 스피커 전원과 IP를 확인하세요"
+        case .timedOut: return loc("응답 시간 초과: 스피커 전원과 IP를 확인하세요", "Timed out: check the speaker's power and IP address", "応答がタイムアウトしました: スピーカーの電源とIPアドレスを確認してください")
         case .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .cannotFindHost:
-            return "스피커에 연결할 수 없습니다. 같은 네트워크인지, macOS 로컬 네트워크 권한이 허용됐는지 확인하세요"
-        default: return "네트워크 오류 (\(error.code.rawValue))"
+            return loc("스피커에 연결할 수 없습니다. 같은 네트워크인지, macOS 로컬 네트워크 권한이 허용됐는지 확인하세요", "Can't reach the speaker. Check that it's on the same network and that local network access is allowed in macOS", "スピーカーに接続できません。同じネットワークにあるか、macOSでローカルネットワークへのアクセスが許可されているか確認してください")
+        default: return loc("네트워크 오류 (\(error.code.rawValue))", "Network error (\(error.code.rawValue))", "ネットワークエラー（\(error.code.rawValue)）")
         }
     }
 }
@@ -201,7 +202,7 @@ public final class URLSessionKefTransport: NSObject, KefTransport, URLSessionTas
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request, delegate: self)
-        guard let http = response as? HTTPURLResponse else { throw KefError.invalidResponse("HTTP 응답이 아닙니다") }
+        guard let http = response as? HTTPURLResponse else { throw KefError.invalidResponse(loc("HTTP 응답이 아닙니다", "not an HTTP response", "HTTPの応答ではありません")) }
         return (data, http)
     }
 

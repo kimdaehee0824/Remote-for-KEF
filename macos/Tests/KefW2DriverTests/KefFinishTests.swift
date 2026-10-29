@@ -22,6 +22,12 @@ struct KefFinishTests {
         #expect(KefFinish.find("lsx-ii-lt/stone-white", model: nil)?.edge == 0xAFA9A2)
     }
 
+    @Test func appDefaultIsRoyalBlueWithItsOutline() {
+        #expect(KefFinish.appDefault.id == "ls60-wireless/royal-blue")
+        #expect(KefFinish.appDefault.cabinet == 0x3A527B)
+        #expect(KefFinish.appDefault.edge == 0x7F8FA9)
+    }
+
     @Test func savedFinishOfAnotherModelIsIgnored() {
         #expect(KefFinish.find("lsx-ii-lt/sage-green", model: "LSX II LT")?.name == "Sage Green")
         #expect(KefFinish.find("lsx-ii-lt/sage-green", model: "LS50 Wireless II") == nil)

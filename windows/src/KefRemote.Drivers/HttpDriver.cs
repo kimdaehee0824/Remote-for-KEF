@@ -26,7 +26,7 @@ public abstract class HttpDriver : IDisposable
     {
         using var response = await Http.SendAsync(request, ct);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            throw new SpeakerException("인증 거부: 기기 암호와 PC 시간을 확인하세요");
+            throw new SpeakerException(Loc.T("인증 거부: 기기 암호와 PC 시간을 확인하세요", "Authentication refused: check the device password and the PC clock", "認証が拒否されました。機器のパスワードとPCの時刻を確認してください"));
         if (!response.IsSuccessStatusCode)
             throw new SpeakerException($"HTTP {(int)response.StatusCode}");
         return await response.Content.ReadAsStringAsync(ct);

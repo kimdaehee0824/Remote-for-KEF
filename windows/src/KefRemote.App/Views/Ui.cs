@@ -1,3 +1,4 @@
+using KefRemote.Core;
 using KefRemote.Desktop;
 using KefRemote.Drivers.Kef;
 using Microsoft.UI.Text;
@@ -113,7 +114,7 @@ static class Ui
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(6, 0, 0, 0),
         };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name + " 설명");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name + Loc.T(" 설명", " help", "の説明"));
         ToolTipService.SetToolTip(button, hoverText);
         var content = Column(8, Text(body, 13));
         if (example != null) content.Children.Add(Secondary(example, 12.5));
@@ -179,11 +180,12 @@ static class Ui
     public static Ellipse Dot(string style) => new() { Width = 8, Height = 8, Style = Style(style), VerticalAlignment = VerticalAlignment.Center };
 
     /// <summary>
-    /// The app icon drawn as vectors (Uni-Q driver centered on the cabinet) so it stays sharp at any scale.
-    /// Brand colors, the same in light and dark mode, or the colors of the speaker's finish.
+    /// The app icon drawn as vectors (Uni-Q driver centered on the cabinet) so it stays sharp at any scale, in the
+    /// colors of the speaker's finish or, when none is picked, those of the app icon (<see cref="KefFinishes.Default"/>).
     /// </summary>
     public static Viewbox AppGlyph(double size, KefFinish? finish = null)
     {
+        finish ??= KefFinishes.Default;
         static SolidColorBrush Brush(uint rgb) => new(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
         var canvas = new Canvas { Width = 48, Height = 48 };
         void Add(Shape shape, double left, double top)
@@ -192,16 +194,15 @@ static class Ui
             Canvas.SetTop(shape, top);
             canvas.Children.Add(shape);
         }
-        var cabinet = new Rectangle { Width = 28, Height = 42, RadiusX = 5, RadiusY = 5, Fill = Brush(finish?.Cabinet ?? 0xD45F2A) };
-        if (finish != null)
+        var cabinet = new Rectangle
         {
-            cabinet.Stroke = Brush(finish.Edge);
-            cabinet.StrokeThickness = 1.5;
-        }
+            Width = 28, Height = 42, RadiusX = 5, RadiusY = 5,
+            Fill = Brush(finish.Cabinet), Stroke = Brush(finish.Edge), StrokeThickness = 1.5,
+        };
         Add(cabinet, 10, 3);
-        Add(new Ellipse { Width = 22, Height = 22, Fill = Brush(finish?.Trim ?? 0x2A2E35) }, 13, 13);
-        Add(new Ellipse { Width = 16.4, Height = 16.4, Fill = Brush(finish?.Cone ?? 0xECE7DF) }, 15.8, 15.8);
-        Add(new Ellipse { Width = 6.4, Height = 6.4, Fill = Brush(finish?.Tweeter ?? 0xD45F2A) }, 20.8, 20.8);
+        Add(new Ellipse { Width = 22, Height = 22, Fill = Brush(finish.Trim) }, 13, 13);
+        Add(new Ellipse { Width = 16.4, Height = 16.4, Fill = Brush(finish.Cone) }, 15.8, 15.8);
+        Add(new Ellipse { Width = 6.4, Height = 6.4, Fill = Brush(finish.Tweeter) }, 20.8, 20.8);
         return new Viewbox { Width = size, Height = size, Child = canvas };
     }
 }

@@ -1,4 +1,5 @@
 using KefRemote.App.Native;
+using KefRemote.Core;
 using KefRemote.Desktop;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Text;
@@ -60,7 +61,7 @@ sealed class OsdView : IVolumeOsd
             BorderThickness = new Thickness(0),
             IsTabStop = false,
         };
-        AutomationProperties.SetName(iconButton, "음소거 전환");
+        AutomationProperties.SetName(iconButton, Loc.T("음소거 전환", "Toggle mute", "ミュートの切り替え"));
         iconButton.Click += (_, _) => Input?.Invoke(HotkeyAction.ToggleMute);
 
         limitTick.Style = Ui.Style("KefLimitTick");
@@ -91,7 +92,8 @@ sealed class OsdView : IVolumeOsd
         surface = new Grid { Children = { root } };
         bool acrylic = !host.SelfTest && AlwaysActiveAcrylic.IsSupported;
         if (!acrylic) surface.Style = Ui.Style("KefSolidSurface");
-        window = new Window { Title = "Remote for KEF 음량", Content = surface };
+        surface.Language = Loc.Tag;
+        window = new Window { Title = Loc.T("Remote for KEF 음량", "Remote for KEF Volume", "Remote for KEF 音量"), Content = surface };
         if (acrylic) window.SystemBackdrop = new AlwaysActiveAcrylic();
         appWindow = WindowHelpers.AppWindowOf(window);
         WindowHelpers.MakePopup(window, activates: false);

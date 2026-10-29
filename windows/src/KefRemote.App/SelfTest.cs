@@ -266,7 +266,7 @@ sealed class DemoDriver(DemoSpeaker speaker) : ISpeakerDriver
     public Task<DeviceInfo> ConnectAsync(CancellationToken cancellationToken = default)
     {
         Online();
-        return Task.FromResult(new DeviceInfo("책상 스피커", Model.DisplayName, "LSXIILT_V2186"));
+        return Task.FromResult(new DeviceInfo(Loc.T("책상 스피커", "Desk speakers", "デスクのスピーカー"), Model.DisplayName, "LSXIILT_V2186"));
     }
 
     public Task<SpeakerState> ReadAsync(CancellationToken cancellationToken = default)

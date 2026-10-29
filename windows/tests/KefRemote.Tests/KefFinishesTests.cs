@@ -31,6 +31,14 @@ public class KefFinishesTests
     }
 
     [Fact]
+    public void DefaultIsRoyalBlueWithItsOutline()
+    {
+        Assert.Equal("ls60-wireless/royal-blue", KefFinishes.Default.Id);
+        Assert.Equal(0x3A527Bu, KefFinishes.Default.Cabinet);
+        Assert.Equal(0x7F8FA9u, KefFinishes.Default.Edge);
+    }
+
+    [Fact]
     public void SavedFinishOfAnotherModelIsIgnored()
     {
         Assert.Equal("Sage Green", KefFinishes.Find("lsx-ii-lt/sage-green", "LSX II LT")?.Name);

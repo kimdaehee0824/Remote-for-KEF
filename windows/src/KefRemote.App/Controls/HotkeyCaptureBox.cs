@@ -1,4 +1,5 @@
 using KefRemote.App.Native;
+using KefRemote.Core;
 using KefRemote.Desktop;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -31,8 +32,8 @@ sealed class HotkeyCaptureBox
         this.binding = binding.Clone();
         this.hotkeys = hotkeys;
         button = new Button { MinWidth = 180, HorizontalContentAlignment = HorizontalAlignment.Center };
-        AutomationProperties.SetName(button, HotkeyBinding.ActionName(binding.Action) + " 단축키");
-        ToolTipService.SetToolTip(button, "눌러서 새 키 조합 지정. Esc 취소, Backspace 끄기");
+        AutomationProperties.SetName(button, HotkeyBinding.ActionName(binding.Action) + Loc.T(" 단축키", " shortcut", "ショートカット"));
+        ToolTipService.SetToolTip(button, Loc.T("눌러서 새 키 조합 지정. Esc 취소, Backspace 끄기", "Select to set a new key combination. Esc cancels, Backspace turns it off", "クリックして新しいキーの組み合わせを指定。Escでキャンセル、Backspaceでオフ"));
         button.Click += (_, _) => Start();
         button.PreviewKeyDown += OnPreviewKeyDown;
         button.LostFocus += (_, _) => Cancel();
@@ -50,7 +51,7 @@ sealed class HotkeyCaptureBox
         if (capturing) return;
         capturing = true;
         hotkeys.Suspend();
-        button.Content = "키 조합을 누르세요";
+        button.Content = Loc.T("키 조합을 누르세요", "Press a key combination", "キーの組み合わせを押してください");
     }
 
     void Cancel()

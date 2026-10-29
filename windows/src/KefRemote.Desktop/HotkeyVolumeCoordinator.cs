@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using KefRemote.Core;
 
 namespace KefRemote.Desktop;
 
@@ -20,6 +21,8 @@ public interface IVolumeOsd
 public sealed class HotkeyVolumeCoordinator : IDisposable
 {
     const int BusyRetryMs = 40, BusyGiveUpMs = 3000;
+
+    static string CheckingConnection => Loc.T("스피커 연결을 확인하는 중입니다", "Checking the speaker connection", "スピーカーの接続を確認しています");
 
     readonly Func<VolumeSnapshot> snapshot;
     readonly Func<bool> controllerBusy;
@@ -83,7 +86,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         switch (outcome)
         {
             case PressOutcome.NotReady:
-                Show(state, message: state.Status ?? "스피커 연결을 확인하는 중입니다", error: true);
+                Show(state, message: state.Status ?? CheckingConnection, error: true);
                 return;
             case PressOutcome.Moved:
                 Show(state, volume: accumulator.Target, pending: true);
@@ -91,8 +94,8 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
             case PressOutcome.AtCap:
                 Show(state, volume: accumulator.Target, pending: accumulator.HasUnsent || accumulator.InFlight,
                     message: (accumulator.Target ?? state.Volume) > state.Limit
-                        ? $"현재 음량이 상한 {state.Limit}보다 높습니다"
-                        : $"상한 {state.Limit}에 닿았습니다");
+                        ? Loc.T($"현재 음량이 상한 {state.Limit}보다 높습니다", $"The volume is above the limit {state.Limit}", $"現在の音量が上限 {state.Limit} を超えています")
+                        : Loc.T($"상한 {state.Limit}에 닿았습니다", $"Reached the limit {state.Limit}", $"上限 {state.Limit} に達しました"));
                 break;
             case PressOutcome.AtFloor:
                 Show(state, volume: accumulator.Target, pending: accumulator.HasUnsent || accumulator.InFlight);
@@ -136,7 +139,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         catch (Exception e)
         {
             accumulator.Failed();
-            Show(snapshot(), message: "음량을 바꾸지 못했습니다: " + e.Message, error: true);
+            Show(snapshot(), message: Loc.T("음량을 바꾸지 못했습니다: ", "Couldn't change the volume: ", "音量を変更できませんでした: ") + e.Message, error: true);
             return;
         }
 
@@ -151,13 +154,16 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
 
         if (!verified.Ready)
         {
-            Show(verified, message: verified.Status ?? "스피커 반영을 확인하지 못했습니다", error: true);
+            Show(verified, message: verified.Status ?? Loc.T("스피커 반영을 확인하지 못했습니다", "Couldn't confirm the change on the speaker", "スピーカーへの反映を確認できませんでした"), error: true);
             return;
         }
         if (Math.Abs(verified.Volume - target) > Tolerance)
         {
             // Not applied (cap, input changed elsewhere, ...). The controller's notice says why.
-            Show(verified, message: verified.Status ?? $"스피커가 {verified.Volume}{Korean.Ro(verified.Volume.ToString())} 응답했습니다");
+            Show(verified, message: verified.Status ?? Loc.T(
+                $"스피커가 {verified.Volume}{Korean.Ro(verified.Volume.ToString())} 응답했습니다",
+                $"The speaker replied {verified.Volume}",
+                $"スピーカーの応答は {verified.Volume} でした"));
             return;
         }
         Show(verified);
@@ -169,7 +175,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
         var state = snapshot();
         if (!state.Ready)
         {
-            Show(state, message: state.Status ?? "스피커 연결을 확인하는 중입니다", error: true);
+            Show(state, message: state.Status ?? CheckingConnection, error: true);
             return;
         }
         if (muteInFlight || accumulator.InFlight) return;
@@ -190,7 +196,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
             {
                 if (waited > BusyGiveUpMs)
                 {
-                    Show(snapshot(), message: "스피커가 응답하지 않아 음소거를 바꾸지 않았습니다", error: true);
+                    Show(snapshot(), message: Loc.T("스피커가 응답하지 않아 음소거를 바꾸지 않았습니다", "Mute unchanged: the speaker isn't responding", "スピーカーが応答しないため、ミュートを変更しませんでした"), error: true);
                     return;
                 }
                 await Task.Delay(BusyRetryMs);
@@ -198,11 +204,13 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
             await setMute(muted);
             var verified = snapshot();
             if (verified.Ready && verified.Muted == muted) Show(verified);
-            else Show(verified, message: verified.Status ?? "음소거 상태를 확인하지 못했습니다", error: true);
+            else Show(verified, message: verified.Status ?? Loc.T("음소거 상태를 확인하지 못했습니다", "Couldn't confirm the mute state", "ミュートの状態を確認できませんでした"), error: true);
         }
         catch (Exception e)
         {
-            Show(snapshot(), message: (muted ? "음소거" : "음소거 해제") + "하지 못했습니다: " + e.Message, error: true);
+            Show(snapshot(), message: (muted
+                ? Loc.T("음소거하지 못했습니다: ", "Couldn't mute: ", "ミュートできませんでした: ")
+                : Loc.T("음소거 해제하지 못했습니다: ", "Couldn't unmute: ", "ミュートを解除できませんでした: ")) + e.Message, error: true);
         }
         finally
         {

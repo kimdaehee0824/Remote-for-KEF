@@ -43,8 +43,8 @@ sealed class FlyoutView
 
     readonly ProgressBar connecting = new() { IsIndeterminate = true };
     readonly InfoBar problem = new() { IsClosable = false };
-    readonly Button retryButton = new() { Content = "다시 연결" };
-    readonly Button setupButton = new() { Content = "스피커 설정" };
+    readonly Button retryButton = new() { Content = Loc.T("다시 연결", "Reconnect", "再接続") };
+    readonly Button setupButton = new() { Content = Loc.T("스피커 설정", "Speaker settings", "スピーカーの設定") };
     readonly InfoBar notice = new() { IsClosable = true };
 
     readonly StackPanel volumeSection = new() { Spacing = 10 };
@@ -80,7 +80,7 @@ sealed class FlyoutView
     readonly List<SourceTile> tileList = [];
 
     readonly StackPanel keys = new() { Orientation = Orientation.Horizontal, Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
-    readonly HyperlinkButton hotkeyWarning = new() { Content = "단축키 확인 필요", Padding = new Thickness(4, 2, 4, 2) };
+    readonly HyperlinkButton hotkeyWarning = new() { Content = Loc.T("단축키 확인 필요", "Check shortcuts", "ショートカットを確認"), Padding = new Thickness(4, 2, 4, 2) };
 
     bool updating;
     bool closing;
@@ -123,8 +123,8 @@ sealed class FlyoutView
             Height = 36,
             Child = Ui.AppGlyph(26),
         };
-        AutomationProperties.SetName(power, "전원");
-        ToolTipService.SetToolTip(power, "전원");
+        AutomationProperties.SetName(power, Loc.T("전원", "Power", "電源"));
+        ToolTipService.SetToolTip(power, Loc.T("전원", "Power", "電源"));
         power.Toggled += OnPowerToggled;
         var header = Ui.Columns(12,
             (Ui.Auto, appIcon),
@@ -140,10 +140,10 @@ sealed class FlyoutView
         notice.Closed += (_, _) => host.Controller.ClearNotice();
 
         // Volume: the number large, limit and its source small on the right, then mute + slider.
-        limitPanel.Children.Add(Ui.Row(4, Ui.Secondary("상한"), limitValue));
+        limitPanel.Children.Add(Ui.Row(4, Ui.Secondary(Loc.T("상한", "Limit", "上限")), limitValue));
         limitPanel.Children.Add(limitSource);
         limitSource.HorizontalAlignment = HorizontalAlignment.Right;
-        switchingNote = Ui.Column(0, Ui.Secondary("바꾸는 동안"), Ui.Secondary("잠시 음소거"));
+        switchingNote = Ui.Column(0, Ui.Secondary(Loc.T("바꾸는 동안", "While switching,", "切り替え中は")), Ui.Secondary(Loc.T("잠시 음소거", "muted briefly", "一時的にミュート")));
         switchingNote.HorizontalAlignment = HorizontalAlignment.Right;
         switchingNote.VerticalAlignment = VerticalAlignment.Bottom;
         var hero = new Grid();
@@ -157,13 +157,13 @@ sealed class FlyoutView
 
         muteButton = new Button { Content = muteIcon, Width = 36, Height = 32, Padding = new Thickness(0) };
         muteButton.Click += async (_, _) => await host.RunWhenIdle(host.Controller.ToggleMuteAsync);
-        AutomationProperties.SetName(slider, "음량");
+        AutomationProperties.SetName(slider, Loc.T("음량", "Volume", "音量"));
         slider.ValueChanged += OnSliderChanged;
         slider.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, _) => dragging = true), true);
         slider.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => EndDrag()), true);
         slider.AddHandler(UIElement.PointerCaptureLostEvent, new PointerEventHandler((_, _) => EndDrag()), true);
         limitTick.Style = Ui.Style("KefLimitTick");
-        ToolTipService.SetToolTip(limitTick, "상한");
+        ToolTipService.SetToolTip(limitTick, Loc.T("상한", "Limit", "上限"));
         sliderHost.Children.Add(slider);
         sliderHost.Children.Add(limitTick);
         sliderHost.SizeChanged += (_, _) => PlaceLimitTick();
@@ -186,8 +186,8 @@ sealed class FlyoutView
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             BorderThickness = new Thickness(0),
         };
-        AutomationProperties.SetName(gear, "설정 및 종료");
-        ToolTipService.SetToolTip(gear, "설정 및 종료");
+        AutomationProperties.SetName(gear, Loc.T("설정 및 종료", "Settings and quit", "設定と終了"));
+        ToolTipService.SetToolTip(gear, Loc.T("설정 및 종료", "Settings and quit", "設定と終了"));
         gear.Flyout = BuildGearMenu();
         var footerGrid = Ui.Columns(8, (Ui.Star, Ui.Row(8, keys, hotkeyWarning)), (Ui.Auto, gear));
         var footer = new Border { Style = Ui.Style("KefFooter"), Padding = new Thickness(16, 6, 8, 6), Child = footerGrid };
@@ -199,6 +199,7 @@ sealed class FlyoutView
         bool acrylic = !host.SelfTest && DesktopAcrylicController.IsSupported();
         if (!acrylic) surface.Style = Ui.Style("KefSolidSurface");
 
+        surface.Language = Loc.Tag;
         window = new Window { Title = "Remote for KEF", Content = surface };
         if (acrylic) window.SystemBackdrop = new DesktopAcrylicBackdrop();
         hwnd = WindowHelpers.Hwnd(window);
@@ -222,11 +223,13 @@ sealed class FlyoutView
     MenuFlyout BuildGearMenu()
     {
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.TopEdgeAlignedRight, ShouldConstrainToRootBounds = true };
-        var settings = new MenuFlyoutItem { Text = "설정", Icon = new FontIcon { Glyph = Glyphs.Settings } };
+        var settings = new MenuFlyoutItem { Text = Loc.T("설정", "Settings", "設定"), Icon = new FontIcon { Glyph = Glyphs.Settings } };
         settings.Click += (_, _) => host.OpenSettings(SettingsPage.General);
-        var about = new MenuFlyoutItem { Text = "정보", Icon = new FontIcon { Glyph = Glyphs.Info } };
+        var about = new MenuFlyoutItem { Text = Loc.T("정보", "About", "バージョン情報"), Icon = new FontIcon { Glyph = Glyphs.Info } };
         about.Click += (_, _) => host.OpenSettings(SettingsPage.About);
-        var quit = new MenuFlyoutItem { Text = "Remote for KEF 종료" };
+        var quit = new MenuFlyoutItem { Text = Loc.T("Remote for KEF 종료", "Quit Remote for KEF", "Remote for KEFを終了") };
+        // The menu opens in a popup, outside the surface whose Language it would inherit.
+        settings.Language = about.Language = quit.Language = Loc.Tag;
         quit.Click += (_, _) => host.Exit();
         menu.Items.Add(settings);
         menu.Items.Add(about);
@@ -349,7 +352,7 @@ sealed class FlyoutView
             title.Text = SpeakerPresentation.Title(c);
             if (offline)
             {
-                subtitle.Text = "연결 끊김";
+                subtitle.Text = SpeakerPresentation.Offline;
                 subtitle.Style = Ui.Style("KefCriticalText");
             }
             else
@@ -392,12 +395,12 @@ sealed class FlyoutView
             bool showTiles = (on || standby) && c.Supports(DriverCapabilities.Source) && c.Driver!.Sources.Count > 1;
             sourcesLabel.Visibility = Show(showTiles);
             tiles.Visibility = Show(showTiles);
-            sourcesLabel.Text = standby ? "이 입력으로 켜기" : "입력";
+            sourcesLabel.Text = standby ? Loc.T("이 입력으로 켜기", "Turn on with this input", "この入力で電源を入れる") : Loc.T("입력", "Input", "入力");
             if (showTiles) RefreshTiles(standby, switchingTo);
             standbyNote.Visibility = Show(standby);
             standbyNote.Text = Korean.KeepWords(canPower
-                ? "테두리 친 타일이 마지막 입력입니다. 켜기 전에 음량이 상한 이하인지 확인합니다."
-                : "이 기기는 앱에서 켤 수 없습니다. 리모컨으로 켜 주세요.");
+                ? Loc.T("테두리 친 타일이 마지막 입력입니다. 켜기 전에 음량이 상한 이하인지 확인합니다.", "The outlined tile is the last input. Before turning on, the app checks that the volume is within the limit.", "枠で囲まれたタイルが最後の入力です。電源を入れる前に、音量が上限以下か確認します。")
+                : Loc.T("이 기기는 앱에서 켤 수 없습니다. 리모컨으로 켜 주세요.", "This device can't be turned on from the app. Turn it on with the remote.", "この機器はアプリから電源を入れられません。リモコンで入れてください。"));
 
             RefreshFooter();
         }
@@ -414,15 +417,15 @@ sealed class FlyoutView
         if (!configured)
         {
             problem.Severity = InfoBarSeverity.Informational;
-            problem.Title = "스피커를 연결하세요";
-            problem.Message = Korean.KeepWords("설정에서 스피커의 IP 주소를 입력하면 여기서 바로 음량과 입력을 바꿀 수 있습니다.");
+            problem.Title = Loc.T("스피커를 연결하세요", "Connect a speaker", "スピーカーを接続してください");
+            problem.Message = Korean.KeepWords(Loc.T("설정에서 스피커의 IP 주소를 입력하면 여기서 바로 음량과 입력을 바꿀 수 있습니다.", "Enter the speaker's IP address in Settings to change the volume and input right here.", "設定でスピーカーのIPアドレスを入力すると、ここで音量と入力をすぐに変えられます。"));
             retryButton.Visibility = Visibility.Collapsed;
             problem.IsOpen = true;
         }
         else if (setupError)
         {
             problem.Severity = InfoBarSeverity.Error;
-            problem.Title = "연결할 수 없습니다";
+            problem.Title = Loc.T("연결할 수 없습니다", "Can't connect", "接続できません");
             problem.Message = Korean.KeepWords(c.Status);
             retryButton.Visibility = Visibility.Collapsed;
             problem.IsOpen = true;
@@ -430,8 +433,8 @@ sealed class FlyoutView
         else if (offline)
         {
             problem.Severity = InfoBarSeverity.Error;
-            problem.Title = "스피커가 응답하지 않습니다";
-            problem.Message = Korean.KeepWords(Reason(c.Status) + "스피커 전원과 Wi-Fi 연결을 확인하세요. 자동으로 다시 시도합니다.");
+            problem.Title = Loc.T("스피커가 응답하지 않습니다", "The speaker isn't responding", "スピーカーが応答しません");
+            problem.Message = Korean.KeepWords(Reason(c.Status) + Loc.T("스피커 전원과 Wi-Fi 연결을 확인하세요. 자동으로 다시 시도합니다.", "Check the speaker's power and Wi-Fi connection. The app keeps retrying.", "スピーカーの電源とWi-Fi接続を確認してください。自動で再試行します。"));
             retryButton.Visibility = Visibility.Visible;
             retryButton.IsEnabled = !host.IsConnecting;
             problem.IsOpen = true;
@@ -443,12 +446,13 @@ sealed class FlyoutView
         problem.Visibility = Show(problem.IsOpen);
     }
 
-    /// <summary>"연결 실패: 응답 시간 초과" becomes "응답 시간 초과. ".</summary>
+    /// <summary>"Couldn't connect: Timed out" becomes "Timed out. " ("。" in Japanese) to lead the message.</summary>
     static string Reason(string status)
     {
         int cut = status.LastIndexOf(": ", StringComparison.Ordinal);
         string reason = (cut >= 0 ? status[(cut + 2)..] : status).Trim();
-        if (reason.Length == 0 || reason == "연결 전") return "";
+        if (reason.Length == 0 || reason == SpeakerController.NotConnected) return "";
+        if (Loc.Language == UiLanguage.Japanese) return reason.EndsWith('。') ? reason : reason + "。";
         return reason.EndsWith('.') ? reason + " " : reason + ". ";
     }
 
@@ -460,7 +464,7 @@ sealed class FlyoutView
         {
             notice.Message = Korean.KeepWords(c.Notice!);
             notice.Severity = c.NoticeIsError ? InfoBarSeverity.Error
-                : c.Notice!.Contains("상한", StringComparison.Ordinal) ? InfoBarSeverity.Warning
+                : c.NoticeIsLimit ? InfoBarSeverity.Warning
                 : InfoBarSeverity.Informational;
         }
         notice.IsOpen = show;
@@ -485,7 +489,7 @@ sealed class FlyoutView
         PlaceLimitTick();
 
         muteIcon.Glyph = Glyphs.ForVolume(s.Volume, s.Muted);
-        string muteText = s.Muted ? "음소거 해제" : "음소거";
+        string muteText = s.Muted ? Loc.T("음소거 해제", "Unmute", "ミュート解除") : Loc.T("음소거", "Mute", "ミュート");
         ToolTipService.SetToolTip(muteButton, muteText);
         AutomationProperties.SetName(muteButton, muteText);
         muteButton.IsEnabled = !switching && c.Supports(DriverCapabilities.Mute);
@@ -676,7 +680,7 @@ sealed class FlyoutView
                         foreach (var key in parts[i].Split(' ', StringSplitOptions.RemoveEmptyEntries)) keys.Children.Add(Keycap(key));
                     }
                 }
-                keys.Children.Add(Ui.Secondary("음량"));
+                keys.Children.Add(Ui.Secondary(Loc.T("음량", "Volume", "音量")));
                 foreach (var child in keys.Children.OfType<TextBlock>()) child.VerticalAlignment = VerticalAlignment.Center;
             }
         }

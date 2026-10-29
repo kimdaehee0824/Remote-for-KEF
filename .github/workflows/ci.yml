@@ -27,18 +27,22 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
-      # Runs the real app against a simulated speaker, walks every screen state and saves screenshots.
+      # Runs the real app against a simulated speaker, walks every screen state and saves screenshots,
+      # once per UI language.
       - name: UI self-test (x64)
         shell: pwsh
         run: |
-          $out = Join-Path $pwd 'self-test'
-          $p = Start-Process -FilePath 'dist/RemoteForKEF-win-x64/RemoteForKEF.exe' -ArgumentList '--self-test', "`"$out`"" -PassThru
-          $done = $p.WaitForExit(240000)
-          if (-not $done) { $p.Kill() }
-          if (Test-Path "$out/report.txt") { Get-Content "$out/report.txt" }
-          if (Test-Path "$out/settings/log.txt") { Get-Content "$out/settings/log.txt" }
-          if (-not $done) { throw 'self-test timed out' }
-          if ($p.ExitCode -ne 0) { throw "self-test failed with exit code $($p.ExitCode)" }
+          foreach ($lang in 'ko', 'en', 'ja') {
+            $out = Join-Path $pwd "self-test/$lang"
+            $p = Start-Process -FilePath 'dist/RemoteForKEF-win-x64/RemoteForKEF.exe' -ArgumentList '--self-test', "`"$out`"", '--lang', $lang -PassThru
+            $done = $p.WaitForExit(240000)
+            if (-not $done) { $p.Kill() }
+            Write-Output "== $lang"
+            if (Test-Path "$out/report.txt") { Get-Content "$out/report.txt" }
+            if (Test-Path "$out/settings/log.txt") { Get-Content "$out/settings/log.txt" }
+            if (-not $done) { throw "self-test ($lang) timed out" }
+            if ($p.ExitCode -ne 0) { throw "self-test ($lang) failed with exit code $($p.ExitCode)" }
+          }
 
       - name: Upload self-test screenshots
         if: always()
@@ -72,16 +76,20 @@ jobs:
       - run: swift test
       # Universal (Apple silicon + Intel) app bundle, ad hoc signed.
       - run: scripts/build-app.sh --universal
-      # Every panel state and settings tab against a simulated speaker: PNGs and report.txt, exit 0 only on pass.
+      # Every panel state and settings tab against a simulated speaker, once per UI language:
+      # PNGs and report.txt, exit 0 only on pass.
       - name: UI self-test
         run: |
-          out="$RUNNER_TEMP/mac-self-test"
-          "build/Remote for KEF.app/Contents/MacOS/KEFRemote" --self-test "$out" &
-          pid=$!
           status=0
-          for _ in $(seq 1 180); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-          if kill -0 "$pid" 2>/dev/null; then kill "$pid"; echo "self-test timed out"; status=1; else wait "$pid" || status=$?; fi
-          cat "$out/report.txt" || echo "no report"
+          for lang in ko en ja; do
+            out="$RUNNER_TEMP/mac-self-test/$lang"
+            "build/Remote for KEF.app/Contents/MacOS/KEFRemote" --self-test "$out" --lang "$lang" &
+            pid=$!
+            for _ in $(seq 1 180); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+            if kill -0 "$pid" 2>/dev/null; then kill "$pid"; echo "self-test ($lang) timed out"; status=1; else wait "$pid" || status=$?; fi
+            echo "== $lang"
+            cat "$out/report.txt" || echo "no report"
+          done
           exit "$status"
       - uses: actions/upload-artifact@v4
         if: always()

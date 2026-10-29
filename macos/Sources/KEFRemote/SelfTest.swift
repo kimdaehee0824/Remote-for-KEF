@@ -267,7 +267,7 @@ final class DemoDriver: SpeakerDriver {
     }
 
     private struct Offline: Error, CustomStringConvertible {
-        var description: String { "네트워크 연결 실패" }
+        var description: String { loc("네트워크 연결 실패", "Network connection failed", "ネットワークに接続できませんでした") }
     }
 
     private func online() throws {
@@ -277,7 +277,7 @@ final class DemoDriver: SpeakerDriver {
     func connect() async throws -> DeviceInfo {
         try online()
         return DeviceInfo(
-            name: "책상 스피커", model: "LSX II LT", firmware: "LSXIILT_V2186",
+            name: loc("책상 스피커", "Desk speakers", "デスクのスピーカー"), model: "LSX II LT", firmware: "LSXIILT_V2186",
             capabilities: [.volume, .mute, .source, .power],
             sources: [
                 SourceOption(id: "usb", name: "USB-C / PC"), SourceOption(id: "wifi", name: "Wi-Fi"),
