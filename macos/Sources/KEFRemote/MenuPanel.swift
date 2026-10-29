@@ -524,6 +524,7 @@ private extension Optional where Wrapped == SpeakerController.Activity {
 }
 
 /// Where the limit in effect comes from, and "Limit 30 (app setting)" for the panel.
+@MainActor
 enum LimitText {
     static func source(_ controller: SpeakerController) -> String {
         controller.limitFromDevice
