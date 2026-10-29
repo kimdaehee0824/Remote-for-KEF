@@ -205,7 +205,7 @@ sealed class SettingsView
     (UIElement, Action?) SpeakerPage()
     {
         var hostBox = new TextBox { Text = host.Settings.Host, PlaceholderText = Loc.T("예: 192.168.0.20", "e.g. 192.168.0.20", "例: 192.168.0.20"), Width = 240 };
-        var passwordBox = new PasswordBox { Password = Secrets.Unprotect(host.Settings.ProtectedPassword), Width = 240, PlaceholderText = Loc.T("설정하지 않았다면 비워 두세요", "Leave empty if you haven't set one", "設定していない場合は空欄のままにしてください") };
+        var passwordBox = new PasswordBox { Password = Secrets.Unprotect(host.Settings.ProtectedPassword), Width = 240, PlaceholderText = Loc.T("설정하지 않았다면 비워 두세요", "Leave empty if you haven't set one", "設定していなければ空欄") };
         var connect = Ui.AccentButton(Loc.T("연결", "Connect", "接続"));
         var inputError = Ui.Text("", 12, style: "KefCriticalText");
         inputError.Visibility = Visibility.Collapsed;
