@@ -332,8 +332,10 @@ sealed class FlyoutView
         if (!force && client.Equals(lastClientSize)) return;
         lastClientSize = client;
         WindowHelpers.SetClientSize(appWindow, client);
-        var display = WindowHelpers.DisplayAt(anchor);
-        appWindow.Move(WindowHelpers.PlaceNearTaskbar(display, anchor, appWindow.Size, (int)Math.Round(EdgeMarginDip * scale)));
+        var (area, edge) = WindowHelpers.FreeArea(WindowHelpers.DisplayAt(anchor));
+        var size = appWindow.Size;
+        var (x, y) = TaskbarPlacement.NearTaskbar(area, edge, anchor.X, anchor.Y, size.Width, size.Height, (int)Math.Round(EdgeMarginDip * scale));
+        appWindow.Move(new PointInt32(x, y));
     }
 
     // ---------- state → screen ----------

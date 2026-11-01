@@ -38,6 +38,8 @@ sealed class OsdView : IVolumeOsd
     int limit = 100;
     bool hovering;
     bool visible;
+    ulong? placedOn;
+    PixelRect freeArea;
     bool closing;
 
     /// <summary>Wheel and icon clicks, routed like hotkeys.</summary>
@@ -159,12 +161,17 @@ sealed class OsdView : IVolumeOsd
     {
         var cursor = WindowHelpers.CursorPosition();
         var display = WindowHelpers.DisplayAt(cursor);
+        // Asking the shell for the taskbar once per appearance (or monitor) is enough while keys repeat.
+        if (!visible || placedOn != display.DisplayId.Value)
+        {
+            freeArea = WindowHelpers.FreeArea(display).Area;
+            placedOn = display.DisplayId.Value;
+        }
         double scale = WindowHelpers.ScaleAt(cursor);
         WindowHelpers.SetClientSize(appWindow, new SizeInt32((int)Math.Ceiling(OsdWidth * scale), (int)Math.Ceiling(height * scale)));
         var size = appWindow.Size;
-        var work = display.WorkArea;
-        int margin = (int)Math.Round(EdgeMarginDip * scale);
-        appWindow.Move(new PointInt32(work.X + work.Width - size.Width - margin, work.Y + work.Height - size.Height - margin));
+        var (x, y) = TaskbarPlacement.BottomRight(freeArea, size.Width, size.Height, (int)Math.Round(EdgeMarginDip * scale));
+        appWindow.Move(new PointInt32(x, y));
     }
 
     void PlaceLimitTick()

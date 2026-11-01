@@ -1,18 +1,11 @@
+using System.Runtime.InteropServices;
+using KefRemote.Desktop;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Windows.Graphics;
 
 namespace KefRemote.App.Native;
-
-/// <summary>Taskbar edge of a display, inferred from where its work area is cut.</summary>
-enum TaskbarEdge
-{
-    Bottom,
-    Top,
-    Left,
-    Right,
-}
 
 static class WindowHelpers
 {
@@ -62,35 +55,47 @@ static class WindowHelpers
 
     public static DisplayArea DisplayAt(PointInt32 point) => DisplayArea.GetFromPoint(point, DisplayAreaFallback.Nearest);
 
-    public static TaskbarEdge EdgeOf(DisplayArea display)
+    /// <summary>
+    /// The part of <paramref name="display"/> the taskbar never covers, and the taskbar's edge. The work area alone
+    /// is not enough: with "Automatically hide the taskbar" it is the whole monitor, and the taskbar slides back over
+    /// its edge whenever the pointer goes there, for example to click the tray icon.
+    /// </summary>
+    public static (PixelRect Area, TaskbarEdge Edge) FreeArea(DisplayArea display)
     {
-        RectInt32 work = display.WorkArea, outer = display.OuterBounds;
-        if (work.Y + work.Height < outer.Y + outer.Height) return TaskbarEdge.Bottom;
-        if (work.Y > outer.Y) return TaskbarEdge.Top;
-        if (work.X > outer.X) return TaskbarEdge.Left;
-        if (work.X + work.Width < outer.X + outer.Width) return TaskbarEdge.Right;
-        return TaskbarEdge.Bottom; // auto-hide taskbar: assume the default position
+        PixelRect work = Pixels(display.WorkArea), monitor = Pixels(display.OuterBounds);
+        TaskbarEdge? autoHideEdge = null;
+        int thickness = 0;
+        if (TaskbarPlacement.DockedEdge(work, monitor) is null && AutoHideTaskbar(monitor) is (TaskbarEdge edge, PixelRect bar))
+        {
+            autoHideEdge = edge;
+            double scale = ScaleAt(new PointInt32(monitor.X + monitor.Width / 2, monitor.Y + monitor.Height / 2));
+            thickness = TaskbarPlacement.AutoHideThickness(bar, edge, monitor, scale);
+        }
+        return TaskbarPlacement.FreeArea(work, monitor, autoHideEdge, thickness);
     }
 
-    /// <summary>
-    /// Places a window of <paramref name="size"/> next to the taskbar near <paramref name="anchor"/>, inside the work area
-    /// with <paramref name="margin"/> pixels to spare, like the Windows flyouts.
-    /// </summary>
-    public static PointInt32 PlaceNearTaskbar(DisplayArea display, PointInt32 anchor, SizeInt32 size, int margin)
+    static readonly (uint Code, TaskbarEdge Edge)[] AppBarEdges =
+        [(Win32.ABE_BOTTOM, TaskbarEdge.Bottom), (Win32.ABE_TOP, TaskbarEdge.Top), (Win32.ABE_LEFT, TaskbarEdge.Left), (Win32.ABE_RIGHT, TaskbarEdge.Right)];
+
+    /// <summary>The auto-hide taskbar on an edge of <paramref name="monitor"/> and its window rectangle, if there is one.</summary>
+    static (TaskbarEdge Edge, PixelRect Bar)? AutoHideTaskbar(PixelRect monitor)
     {
-        RectInt32 work = display.WorkArea;
-        int minX = work.X + margin, maxX = work.X + work.Width - size.Width - margin;
-        int minY = work.Y + margin, maxY = work.Y + work.Height - size.Height - margin;
-        int centeredX = Math.Clamp(anchor.X - size.Width / 2, minX, Math.Max(minX, maxX));
-        int centeredY = Math.Clamp(anchor.Y - size.Height / 2, minY, Math.Max(minY, maxY));
-        return EdgeOf(display) switch
+        foreach (var (code, edge) in AppBarEdges)
         {
-            TaskbarEdge.Top => new PointInt32(centeredX, minY),
-            TaskbarEdge.Left => new PointInt32(minX, centeredY),
-            TaskbarEdge.Right => new PointInt32(Math.Max(minX, maxX), centeredY),
-            _ => new PointInt32(centeredX, Math.Max(minY, maxY)),
-        };
+            var data = new Win32.APPBARDATA
+            {
+                cbSize = Marshal.SizeOf<Win32.APPBARDATA>(),
+                uEdge = code,
+                rc = new Win32.RECT { Left = monitor.X, Top = monitor.Y, Right = monitor.Right, Bottom = monitor.Bottom },
+            };
+            IntPtr bar = Win32.SHAppBarMessage(Win32.ABM_GETAUTOHIDEBAREX, ref data);
+            if (bar == IntPtr.Zero || !Win32.IsWindow(bar)) continue;
+            return (edge, Win32.GetWindowRect(bar, out var r) ? new PixelRect(r.Left, r.Top, r.Width, r.Height) : default);
+        }
+        return null;
     }
+
+    static PixelRect Pixels(RectInt32 r) => new(r.X, r.Y, r.Width, r.Height);
 
     public static PointInt32 CursorPosition() =>
         Win32.GetCursorPos(out var p) ? new PointInt32(p.X, p.Y) : new PointInt32(0, 0);

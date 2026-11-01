@@ -112,7 +112,7 @@ sealed class SettingsView
 
     void CenterOnPrimary()
     {
-        var work = DisplayArea.Primary.WorkArea;
+        var work = WindowHelpers.FreeArea(DisplayArea.Primary).Area;
         double scale = WindowHelpers.ScaleAt(new PointInt32(work.X + work.Width / 2, work.Y + work.Height / 2));
         int w = Math.Min((int)(WindowWidth * scale), work.Width), h = Math.Min((int)(WindowHeight * scale), work.Height);
         appWindow.MoveAndResize(new RectInt32(work.X + (work.Width - w) / 2, work.Y + (work.Height - h) / 2, w, h));
