@@ -16,7 +16,14 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
     public const string MutePath = "settings:/mediaPlayer/mute";
     public const string PowerPath = "settings:/kef/host/speakerStatus";
 
+    /// <summary>Seconds the speaker may hold a pollQueue request open waiting for a change.</summary>
+    public const int ChangeHoldSeconds = 10;
+
+    static readonly HashSet<string> StatePaths = [SourcePath, PowerPath];
+    static readonly HashSet<string> DevicePaths = ["settings:/kef/host/maximumVolume", "settings:/kef/host/volumeLimit", "settings:/deviceName"];
+
     readonly string password;
+    string? queueId;
 
     public static readonly DriverDescriptor Descriptor = new(
         "kef-w2",
@@ -42,6 +49,7 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
 
     public DriverCapabilities Capabilities =>
         DriverCapabilities.Volume | DriverCapabilities.Mute | DriverCapabilities.Power |
+        DriverCapabilities.Playback | DriverCapabilities.Changes |
         (Model?.Sources.Count > 1 ? DriverCapabilities.Source : 0);
 
     public IReadOnlyList<SourceOption> Sources => Model == null ? [] : KefModels.SourceOptions(Model);
@@ -137,16 +145,68 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
     public int? ApproachOvershoot(int current, int target) =>
         target > current ? KefVolumeCurve.Overshoot(target) : null;
 
+    /// <summary>Streaming inputs carry track information. Physical inputs only report their own name.</summary>
+    public bool SourceHasPlayback(string? sourceId) => sourceId is "wifi" or "bluetooth";
+
+    public async Task<PlaybackInfo> ReadPlaybackAsync(CancellationToken ct = default)
+    {
+        var data = GetDataAsync(KefW2Protocol.PlayerDataPath, ct);
+        var time = OptionalAsync(GetDataAsync(KefW2Protocol.PlayTimePath, ct));
+        return KefW2Protocol.ParsePlayback(await data, await time);
+
+        // The position is optional: without it the card just shows no progress.
+        static async Task<string?> OptionalAsync(Task<string> read)
+        {
+            try { return await read; }
+            catch (SpeakerException) { return null; }
+        }
+    }
+
+    public Task SendPlaybackAsync(PlaybackCommand command, CancellationToken ct = default) =>
+        SetDataAsync(KefW2Protocol.PlayerControlPath, KefW2Protocol.ControlValue(command), ct, role: "activate");
+
+    /// <summary>
+    /// Long-polls the speaker's event queue, subscribing first if needed. The event endpoints are not signed in any
+    /// auth mode (measured on LSX II LT 2.1.86 in setData mode). Any failure drops the queue so the next call
+    /// subscribes again.
+    /// </summary>
+    public async Task<DeviceChanges> WaitForChangesAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            if (queueId == null)
+            {
+                using var subscribe = new HttpRequestMessage(HttpMethod.Post, KefW2Protocol.ModifyQueueUrl(Host))
+                {
+                    Content = new StringContent(KefW2Protocol.ModifyQueueBody(
+                        [SourcePath, PowerPath, VolumePath, MutePath, KefW2Protocol.PlayerDataPath, .. DevicePaths]), Encoding.UTF8, "application/json"),
+                };
+                queueId = KefW2Protocol.ReadQueueId(await SendAsync(subscribe, ct));
+            }
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(ChangeHoldSeconds + 3));
+            using var poll = new HttpRequestMessage(HttpMethod.Get, KefW2Protocol.PollQueueUrl(Host, queueId, ChangeHoldSeconds));
+            string text = await SendAsync(LongPoll, poll, deadline.Token);
+            if (string.IsNullOrWhiteSpace(text)) return DeviceChanges.None;
+            return KefW2Protocol.ParseChanges(text, VolumePath, MutePath, StatePaths, DevicePaths);
+        }
+        catch
+        {
+            queueId = null;
+            throw;
+        }
+    }
+
     Task<string> GetDataAsync(string path, CancellationToken ct) =>
         RequestAsync("GET", KefW2Protocol.GetDataUrl(Host, path), null, AuthMode == "all", ct);
 
-    async Task SetDataAsync(string path, JsonObject typed, CancellationToken ct)
+    async Task SetDataAsync(string path, JsonObject typed, CancellationToken ct, string role = "value")
     {
         if (AuthMode is not ("none" or "setData" or "all")) throw new SpeakerException(Loc.T("인증 방식 미확인: 제어 중지", "Authentication mode unknown; control stopped", "認証方式を確認できないため、操作を停止しました"));
-        await RequestAsync("POST", KefW2Protocol.SetDataUrl(Host), new Payload(path, typed), AuthMode != "none", ct);
+        await RequestAsync("POST", KefW2Protocol.SetDataUrl(Host), new Payload(path, typed, role), AuthMode != "none", ct);
     }
 
-    sealed record Payload(string Path, JsonObject Typed);
+    sealed record Payload(string Path, JsonObject Typed, string Role);
 
     async Task<string> RequestAsync(string method, string url, Payload? payload, bool secure, CancellationToken ct)
     {
@@ -160,8 +220,8 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
         if (payload != null)
         {
             body = secure
-                ? KefW2Protocol.SecureSetBody(payload.Path, payload.Typed, key!, RandomBytes(16))
-                : KefW2Protocol.PlainSetBody(payload.Path, payload.Typed);
+                ? KefW2Protocol.SecureSetBody(payload.Path, payload.Typed, key!, RandomBytes(16), payload.Role)
+                : KefW2Protocol.PlainSetBody(payload.Path, payload.Typed, payload.Role);
         }
 
         using var request = new HttpRequestMessage(new HttpMethod(method), url);

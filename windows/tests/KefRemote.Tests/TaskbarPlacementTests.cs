@@ -88,4 +88,32 @@ public class TaskbarPlacementTests
         var work = Monitor with { Height = 2064 };
         Assert.Equal(work, TaskbarPlacement.FreeArea(work, Monitor, TaskbarEdge.Bottom, 96).Area);
     }
+
+    [Fact]
+    public void CompanionGoesAboveTheFlyout()
+    {
+        var area = new PixelRect(0, 0, 1920, 1032);
+        var flyout = new PixelRect(1548, 600, 360, 420);
+        Assert.Equal((1548, 600 - 12 - 160), TaskbarPlacement.Companion(area, TaskbarEdge.Bottom, flyout, 360, 160, 12));
+    }
+
+    [Fact]
+    public void CompanionGoesBelowWithTheTaskbarOnTop()
+    {
+        var area = new PixelRect(0, 48, 1920, 1032);
+        var flyout = new PixelRect(1548, 60, 360, 420);
+        Assert.Equal((1548, 480 + 12), TaskbarPlacement.Companion(area, TaskbarEdge.Top, flyout, 360, 160, 12));
+    }
+
+    [Fact]
+    public void CompanionSwitchesSidesWhenThereIsNoRoom()
+    {
+        var area = new PixelRect(0, 0, 1280, 720);
+        var tall = new PixelRect(900, 100, 360, 608);
+        // No room above or below: stays inside the area, overlapping as little as it can.
+        var (_, y) = TaskbarPlacement.Companion(area, TaskbarEdge.Bottom, tall, 360, 160, 12);
+        Assert.InRange(y, 0, 720 - 160);
+        var low = new PixelRect(900, 20, 360, 400);
+        Assert.Equal((900, 432), TaskbarPlacement.Companion(area, TaskbarEdge.Bottom, low, 360, 160, 12));
+    }
 }

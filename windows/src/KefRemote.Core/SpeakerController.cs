@@ -22,6 +22,7 @@ public enum SpeakerOperation
     Source,
     PowerOn,
     PowerOff,
+    Playback,
 }
 
 /// <summary>
@@ -39,6 +40,8 @@ public enum SpeakerOperation
 /// - Any failure invalidates the state, which blocks commands until the next successful poll. A speaker that
 ///   reads fine but is still not on when a power-on stops waiting is reported, not failed.
 /// - Disconnecting or invalidating bumps a generation counter so in-flight work is discarded.
+/// - Change reports from the device (<see cref="ISpeakerDriver.WaitForChangesAsync"/>) only trigger reads. While they
+///   arrive, polling slows to a heartbeat; when they fail, polling takes over at the usual pace.
 ///
 /// Not thread safe: call from a single (UI) synchronization context.
 /// </summary>
@@ -60,7 +63,12 @@ public sealed class SpeakerController : IDisposable
     // half second for the first 5 s so a usual wake shows at once, then one a second, about 30 s in all.
     const int WakeQuickAttempts = 11, WakeAttempts = 36, WakeSlowDelayMs = 1000;
     const int WakingPollMs = 500;
+    // With change reports the poll is only a heartbeat that notices a speaker that went away.
+    const int HeartbeatVisibleMs = 3000, HeartbeatHiddenMs = 10000;
     static readonly int[] Backoff = [2000, 5000, 10000, 30000];
+    static readonly int[] ListenBackoff = [2000, 5000, 10000, 30000, 60000];
+    // A play/pause or skip shows on the player within about 1.5 s.
+    const int PlaybackConfirmAttempts = 6, PlaybackConfirmDelayMs = 300;
 
     public static string NotConnected => Loc.T("연결 전", "Not connected", "未接続");
     public static string UnsupportedInput => Loc.T("지원하지 않는 입력: ", "Unsupported input: ", "対応していない入力: ");
@@ -74,6 +82,11 @@ public sealed class SpeakerController : IDisposable
     CancellationTokenSource cts = new();
     PendingVolume? pendingVolume;
     LateWake? lateWake;
+    CancellationTokenSource? listenCts;
+    int listenFailures;
+    DeviceChanges? heldChanges;
+    bool playbackEnabled, playbackReading, playbackAgain, playbackConfirming, playbackDirty;
+    long playbackAt;
 
     /// <summary>
     /// A power-on that stopped waiting before the speaker said it was on: the input it was asked for and the notice
@@ -119,6 +132,44 @@ public sealed class SpeakerController : IDisposable
     /// (<see cref="ISpeakerDriver.ApproachOvershoot"/>). The overshoot never exceeds <see cref="EffectiveLimit"/>.
     /// </summary>
     public bool ApproachFromAbove { get; set; }
+
+    /// <summary>What the speaker is playing. <see cref="PlaybackInfo.None"/> while <see cref="PlaybackEnabled"/> is off.</summary>
+    public PlaybackInfo Playback { get; private set; } = PlaybackInfo.None;
+
+    /// <summary>Read what is playing. Off: nothing is read and <see cref="Playback"/> stays empty.</summary>
+    public bool PlaybackEnabled
+    {
+        get => playbackEnabled;
+        set
+        {
+            if (playbackEnabled == value) return;
+            playbackEnabled = value;
+            if (value) _ = RefreshPlaybackAsync();
+            else SetPlayback(PlaybackInfo.None);
+        }
+    }
+
+    /// <summary>A track to show: playback is on, the speaker is on a streaming input and something is loaded.</summary>
+    public bool ShowsPlayback =>
+        playbackEnabled && IsReady && Supports(DriverCapabilities.Playback) && Driver!.SourceHasPlayback(State.SourceId) && Playback.HasTrack;
+
+    /// <summary>Position now, counted on from the last read while playing. -1 when unknown.</summary>
+    public long PlaybackPositionMs
+    {
+        get
+        {
+            var p = Playback;
+            if (p.PositionMs < 0) return -1;
+            long position = p.PositionMs + (p.Status == PlaybackStatus.Playing ? Math.Max(0, Clock() - playbackAt) : 0);
+            return p.DurationMs > 0 ? Math.Min(position, p.DurationMs) : position;
+        }
+    }
+
+    /// <summary>Start listening for change reports after connecting, when the driver offers them. Off in tests.</summary>
+    public bool ListenForChanges { get; set; } = true;
+
+    /// <summary>Change reports are arriving, so polling is only a heartbeat.</summary>
+    public bool ChangesActive { get; private set; }
 
     /// <summary>Raised after any change of state, status or busy flag.</summary>
     public event Action? Changed;
@@ -196,6 +247,8 @@ public sealed class SpeakerController : IDisposable
             await ReadAsync(token);
             failures = 0;
             Status = State.Active ? Connected : InStandby;
+            playbackDirty = true;
+            StartListening(driver);
             return true;
         }
         catch (Exception e) when (token == generation)
@@ -238,6 +291,7 @@ public sealed class SpeakerController : IDisposable
             if (token == generation) Busy = false;
             Notify();
             if (token == generation) DrainPendingVolume();
+            ReleaseHeldChanges();
         }
     }
 
@@ -245,6 +299,10 @@ public sealed class SpeakerController : IDisposable
     public void Disconnect(string reason)
     {
         NextGeneration();
+        StopListening();
+        heldChanges = null;
+        Playback = PlaybackInfo.None;
+        playbackConfirming = false;
         Driver?.Dispose();
         Driver = null;
         Device = null;
@@ -292,6 +350,8 @@ public sealed class SpeakerController : IDisposable
             if (previous.Valid && previous.Active && State.Active && previous.SourceId != State.SourceId)
                 SetNotice(Loc.T("다른 곳에서 입력을 바꿨습니다", "The input was changed elsewhere", "ほかの場所で入力が切り替えられました"));
             Status = State.Active ? Connected : InStandby;
+            // Without change reports the player is read with every poll; with them only to correct the position.
+            if (!ChangesActive || Playback.Status == PlaybackStatus.Playing) playbackDirty = true;
         }
         catch (Exception e) when (token == generation)
         {
@@ -306,13 +366,16 @@ public sealed class SpeakerController : IDisposable
             if (token == generation) Busy = false;
             Notify();
             if (token == generation) DrainPendingVolume();
+            ReleaseHeldChanges();
         }
     }
 
     /// <summary>Suggested delay before the next poll, with backoff after failures.</summary>
     public TimeSpan NextPollDelay(bool windowVisible) =>
         TimeSpan.FromMilliseconds(failures == 0
-            ? IsWaking ? WakingPollMs : windowVisible ? 1500 : 4000
+            ? IsWaking ? WakingPollMs
+                : ChangesActive ? windowVisible ? HeartbeatVisibleMs : HeartbeatHiddenMs
+                : windowVisible ? 1500 : 4000
             : Backoff[Math.Min(failures, Backoff.Length) - 1]);
 
     /// <summary>Change the volume relative to the value read right before writing.</summary>
@@ -528,6 +591,7 @@ public sealed class SpeakerController : IDisposable
                 OperationSource = null;
             }
             Notify();
+            ReleaseHeldChanges();
         }
     }
 
@@ -613,6 +677,7 @@ public sealed class SpeakerController : IDisposable
             }
             Notify();
             if (token == generation) DrainPendingVolume();
+            ReleaseHeldChanges();
         }
     }
 
@@ -653,6 +718,7 @@ public sealed class SpeakerController : IDisposable
         var s = await Driver!.ReadAsync(cts.Token);
         Check(token);
         if (s.Volume is < 0 or > 100) throw new SpeakerException(Loc.T("음량 응답 범위 오류", "Volume reply out of range", "音量の応答が範囲外です"));
+        if (s.SourceId != State.SourceId || s.Power != State.Power) playbackDirty = true;
         State = s with { Valid = true, SeenAt = Clock() };
         if (State.Active && State.SourceId != null) LastActiveSource = State.SourceId;
         if (State.Active && lateWake is { } wake) FinishLateWake(wake);
@@ -676,6 +742,237 @@ public sealed class SpeakerController : IDisposable
         NoticeIsError = false;
         NoticeIsLimit = false;
     }
+
+    /// <summary>Play/pause, next or previous on the speaker's own player. Confirmed by reading the player back.</summary>
+    public Task PlaybackAsync(PlaybackCommand command) => Run(SpeakerOperation.Playback, null, async (before, token) =>
+    {
+        if (!Supports(DriverCapabilities.Playback)) return;
+        var shown = Playback;
+        long shownPosition = PlaybackPositionMs;
+        var driver = Driver!;
+        try
+        {
+            await driver.SendPlaybackAsync(command, cts.Token);
+        }
+        catch (SpeakerException e)
+        {
+            // The player turned the command down (e.g. a source without skipping). The connection is fine.
+            SetNotice(Loc.T("스피커가 재생 명령을 받지 않았습니다: ", "The speaker didn't take the playback command: ", "スピーカーが再生コマンドを受け付けませんでした: ") + e.Message);
+            return;
+        }
+        Check(token);
+        if (command == PlaybackCommand.TogglePause && shown.HasTrack)
+        {
+            // Show the new state at once, like the system media controls; the reads below confirm it.
+            SetPlayback(shown with
+            {
+                Status = shown.Status == PlaybackStatus.Playing ? PlaybackStatus.Paused : PlaybackStatus.Playing,
+                PositionMs = shownPosition,
+            });
+        }
+        _ = ConfirmPlaybackAsync(driver, token, command, shown, shownPosition);
+    });
+
+    /// <summary>Reads the player until the command shows, without holding up other commands.</summary>
+    async Task ConfirmPlaybackAsync(ISpeakerDriver driver, int token, PlaybackCommand command, PlaybackInfo shown, long shownPosition)
+    {
+        playbackConfirming = true;
+        PlaybackInfo? last = null;
+        try
+        {
+            for (int i = 0; i < PlaybackConfirmAttempts; i++)
+            {
+                await Delay(PlaybackConfirmDelayMs, cts.Token);
+                if (token != generation || Driver != driver) return;
+                last = await driver.ReadPlaybackAsync(cts.Token);
+                if (token != generation || Driver != driver) return;
+                bool done = command switch
+                {
+                    PlaybackCommand.TogglePause => last.Status != shown.Status,
+                    _ => last.Title != shown.Title || last.Artist != shown.Artist
+                        || (last.PositionMs >= 0 && shownPosition >= 0 && last.PositionMs + 1500 < shownPosition),
+                };
+                if (done) break;
+            }
+        }
+        catch
+        {
+            // Playback is extra information. The regular poll reports connection problems.
+        }
+        finally
+        {
+            if (token == generation && Driver == driver)
+            {
+                playbackConfirming = false;
+                if (last != null && playbackEnabled) SetPlayback(last);
+                if (playbackAgain) _ = RefreshPlaybackAsync();
+            }
+        }
+    }
+
+    /// <summary>Read what is playing. Read only; failures keep what is shown and are left to the regular poll.</summary>
+    public async Task RefreshPlaybackAsync()
+    {
+        if (!playbackEnabled || Driver is not { } driver || Device == null || !Supports(DriverCapabilities.Playback)) return;
+        if (!State.Active || !driver.SourceHasPlayback(State.SourceId))
+        {
+            if (Playback != PlaybackInfo.None) SetPlayback(PlaybackInfo.None);
+            return;
+        }
+        if (playbackReading || playbackConfirming)
+        {
+            playbackAgain = true;
+            return;
+        }
+        playbackReading = true;
+        int token = generation;
+        try
+        {
+            do
+            {
+                playbackAgain = false;
+                var info = await driver.ReadPlaybackAsync(cts.Token);
+                if (token != generation || Driver != driver || !playbackEnabled) return;
+                SetPlayback(info);
+            }
+            while (playbackAgain && !playbackConfirming);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            playbackReading = false;
+        }
+    }
+
+    void SetPlayback(PlaybackInfo info)
+    {
+        Playback = info;
+        playbackAt = Clock();
+        Notify();
+    }
+
+    void StartListening(ISpeakerDriver driver)
+    {
+        StopListening();
+        if (!ListenForChanges || !driver.Capabilities.HasFlag(DriverCapabilities.Changes)) return;
+        var source = new CancellationTokenSource();
+        listenCts = source;
+        _ = ListenAsync(driver, source.Token);
+    }
+
+    void StopListening()
+    {
+        listenCts?.Cancel();
+        listenCts?.Dispose();
+        listenCts = null;
+        listenFailures = 0;
+        ChangesActive = false;
+    }
+
+    /// <summary>
+    /// Waits for change reports for as long as <paramref name="driver"/> is connected. Has its own cancellation:
+    /// invalidating after a failed command must not stop it.
+    /// </summary>
+    async Task ListenAsync(ISpeakerDriver driver, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested && Driver == driver)
+        {
+            long started = Clock();
+            DeviceChanges changes;
+            try
+            {
+                changes = await driver.WaitForChangesAsync(ct);
+            }
+            catch (Exception) when (!ct.IsCancellationRequested && Driver == driver)
+            {
+                listenFailures++;
+                if (ChangesActive)
+                {
+                    ChangesActive = false;
+                    Notify();
+                }
+                // Find out at once whether the speaker is gone or only its change reports stopped.
+                await PollAsync();
+                if (!await Pause(ListenBackoff[Math.Min(listenFailures, ListenBackoff.Length) - 1], ct)) return;
+                continue;
+            }
+            catch
+            {
+                return;
+            }
+            if (ct.IsCancellationRequested || Driver != driver) return;
+            listenFailures = 0;
+            if (!ChangesActive)
+            {
+                ChangesActive = true;
+                Notify();
+            }
+            await ApplyChangesAsync(changes);
+            // A device that answers at once with nothing would otherwise be asked again in a tight loop.
+            if (!changes.Any && Clock() - started < 1000 && !await Pause(1000, ct)) return;
+        }
+    }
+
+    async Task<bool> Pause(int ms, CancellationToken ct)
+    {
+        try
+        {
+            await Delay(ms, ct);
+            return !ct.IsCancellationRequested;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Acts on a change report. Reads only when the report says something the state doesn't show yet, so the echo
+    /// of the app's own verified write costs nothing. While busy the report is held and merged, and looked at again
+    /// once the running command or read has finished.
+    /// </summary>
+    async Task ApplyChangesAsync(DeviceChanges changes)
+    {
+        if (Driver == null || Device == null) return;
+        if (Busy)
+        {
+            heldChanges = heldChanges == null ? changes : Merge(heldChanges, changes);
+            return;
+        }
+        if (changes.Device)
+        {
+            await RefreshDeviceAsync();
+            changes = changes with { Device = false };
+            if (Busy)
+            {
+                heldChanges = heldChanges == null ? changes : Merge(heldChanges, changes);
+                return;
+            }
+        }
+        bool read = changes.State || !State.Valid
+            || changes.Volume is int v && v != State.Volume
+            || changes.Muted is bool m && m != State.Muted;
+        if (read) await PollAsync();
+        if (changes.Playback) await RefreshPlaybackAsync();
+    }
+
+    void ReleaseHeldChanges()
+    {
+        if (heldChanges is not { } held || Busy) return;
+        heldChanges = null;
+        _ = ApplyChangesAsync(held);
+    }
+
+    static DeviceChanges Merge(DeviceChanges a, DeviceChanges b) => new()
+    {
+        Volume = b.Volume ?? a.Volume,
+        Muted = b.Muted ?? a.Muted,
+        State = a.State || b.State,
+        Device = a.Device || b.Device,
+        Playback = a.Playback || b.Playback,
+    };
 
     void Check(int token)
     {
@@ -706,7 +1003,15 @@ public sealed class SpeakerController : IDisposable
         cts = new CancellationTokenSource();
     }
 
-    void Notify() => Changed?.Invoke();
+    void Notify()
+    {
+        Changed?.Invoke();
+        if (playbackDirty && !Busy && Driver != null)
+        {
+            playbackDirty = false;
+            _ = RefreshPlaybackAsync();
+        }
+    }
 
     static string Describe(Exception e) => e switch
     {

@@ -121,5 +121,121 @@
       "kind": "int",
       "error": true
     }
+  ],
+  "playerControl": [
+    {
+      "host": "192.168.0.14",
+      "password": "",
+      "saltHex": "000102030405",
+      "ivHex": "000102030405060708090a0b0c0d0e0f",
+      "timestampMs": 1761570000000,
+      "command": "togglePause",
+      "value": "{\"control\":\"pause\"}",
+      "body": "{\"path\":\"player:player/control\",\"role\":\"activate\",\"value\":\"AAECAwQFBgcICQoLDA0OD6sRkwxMDn+QHAn3hgrckR445uLy4YbOZHNBeB/N4PBA\"}",
+      "header": "HMAC_SHA256_AES256 dXNlcg==.AAECAwQF.1761570000000.X+ANz4kdDct6AEPvmojdsFZteiiYjCG3SV+HQxrcNkw="
+    }
+  ],
+  "playback": [
+    {
+      "description": "LSX II LT 2.1.86 playing Spotify Connect (captured 2026-11-01)",
+      "data": "[{\"controls\":{\"next_\":true,\"playMode\":{\"repeatOne\":false,\"shuffleRepeatAll\":false,\"repeatAll\":false,\"shuffle\":false,\"shuffleRepeatOne\":false},\"seekTime\":true,\"previous\":true,\"pause\":true},\"trackRoles\":{\"containerType\":\"none\",\"audioType\":\"audioBroadcast\",\"doNotTrack\":true,\"icon\":\"https://i.scdn.co/image/ab67616d0000b2730e62daaea2c7b94053e1c142\",\"mediaData\":{\"activeResource\":{\"mimeType\":\"audio/unknown\",\"quality\":{\"spotifyHifi\":true}},\"resources\":[{\"mimeType\":\"audio/unknown\",\"quality\":{\"spotifyHifi\":true}}],\"metaData\":{\"album\":\"Bird's Eye\",\"playbackSourceId\":\"spotify:track:736PP5LTtREkDgktNmX3Gu\",\"trackId\":\"spotify:track:4WFgvKVfEhb3IUAFGrutTR\",\"playbackSource\":\"\",\"serviceID\":\"spotify\",\"albumId\":\"spotify:album:1uE3dRPe3SrGdNhd1nWlSa\",\"contentPlayContextPath\":\"spotify:/ui/context\",\"playLogicPath\":\"spotify:playlogic\",\"artist\":\"Ravyn Lenae\",\"albumCoverUri\":\"spotify:image:ab67616d0000b2730e62daaea2c7b94053e1c142\",\"artistId\":\"spotify:artist:5RTLRtXjbXI2lSXc6jxlAz\",\"live\":true}},\"type\":\"audio\",\"title\":\"Love Me Not\"},\"state\":\"playing\",\"mediaRoles\":{\"containerType\":\"none\",\"audioType\":\"audioBroadcast\",\"doNotTrack\":true,\"mediaData\":{\"resources\":[{\"uri\":\"?preset=%7B%22trackUri%22:%22spotify:track:4WFgvKVfEhb3IUAFGrutTR%22,%22title%22:%22Spotify%20content%22,%22playMode%22:%22normal%22,%22srcUri%22:%22spotify:track:736PP5LTtREkDgktNmX3Gu%22%7D\",\"mimeType\":\"audio/unknown\"}],\"metaData\":{\"serviceID\":\"spotify\",\"contentPlayContextPath\":\"spotify:/ui/context\",\"playLogicPath\":\"spotify:playlogic\",\"live\":true}},\"type\":\"audio\",\"title\":\"Spotify content\"},\"status\":{\"duration\":213466},\"contextPath\":\"spotify:/ui/context\",\"playId\":{\"timestamp\":428572132,\"systemMemberId\":\"lsxlite-c44a124b-f1ad-4fbb-a349-aabd30556079\"}}]",
+      "playTime": "[{\"i64_\":49876,\"type\":\"i64_\"}]",
+      "expect": {
+        "status": "playing",
+        "title": "Love Me Not",
+        "artist": "Ravyn Lenae",
+        "album": "Bird's Eye",
+        "artworkUrl": "https://i.scdn.co/image/ab67616d0000b2730e62daaea2c7b94053e1c142",
+        "service": "Spotify",
+        "durationMs": 213466,
+        "positionMs": 49876,
+        "canTogglePause": true,
+        "canNext": true,
+        "canPrevious": true
+      }
+    },
+    {
+      "description": "Physical input: its name as the title, a skin icon, no controls, no position",
+      "data": "[{\"trackRoles\":{\"title\":\"usb\",\"icon\":\"skin:iconUsb\",\"mediaData\":{\"metaData\":{\"serviceID\":\"usb\"}}},\"controls\":{\"pause\":false,\"next_\":false,\"previous\":false}}]",
+      "playTime": "[{\"type\":\"i64_\",\"i64_\":-1}]",
+      "expect": {
+        "status": "stopped",
+        "title": "usb",
+        "artist": "",
+        "album": "",
+        "artworkUrl": null,
+        "service": "usb",
+        "durationMs": 0,
+        "positionMs": -1,
+        "canTogglePause": false,
+        "canNext": false,
+        "canPrevious": false
+      }
+    },
+    {
+      "description": "Paused, no playTime reply",
+      "data": "[{\"state\":\"paused\",\"trackRoles\":{\"title\":\"Song\",\"mediaData\":{\"metaData\":{\"albumArtist\":\"Band\",\"serviceID\":\"airplay\"}}},\"status\":{\"duration\":1000},\"controls\":{\"pause\":true}}]",
+      "playTime": null,
+      "expect": {
+        "status": "paused",
+        "title": "Song",
+        "artist": "Band",
+        "album": "",
+        "artworkUrl": null,
+        "service": "AirPlay",
+        "durationMs": 1000,
+        "positionMs": -1,
+        "canTogglePause": true,
+        "canNext": false,
+        "canPrevious": false
+      }
+    }
+  ],
+  "events": [
+    {
+      "description": "Captured on LSX II LT: playTime only, which the apps don't subscribe to",
+      "json": "[{\"itemValue\":{\"i64_\":50526,\"type\":\"i64_\"},\"rowsEvents\":[],\"path\":\"player:player/data/playTime\",\"itemType\":\"update\"}]",
+      "expect": {}
+    },
+    {
+      "description": "Hold expired",
+      "json": "[]",
+      "expect": {}
+    },
+    {
+      "description": "Last volume wins",
+      "json": "[{\"path\":\"player:volume\",\"itemType\":\"update\",\"itemValue\":{\"type\":\"i32_\",\"i32_\":30}},{\"path\":\"player:volume\",\"itemType\":\"update\",\"itemValue\":{\"type\":\"i32_\",\"i32_\":31}},{\"path\":\"settings:/mediaPlayer/mute\",\"itemType\":\"update\",\"itemValue\":{\"type\":\"bool_\",\"bool_\":true}},{\"path\":\"player:player/data\",\"itemType\":\"update\",\"itemValue\":{\"state\":\"paused\"}}]",
+      "expect": {
+        "volume": 31,
+        "muted": true,
+        "playback": true
+      }
+    },
+    {
+      "description": "Input and power need a full read",
+      "json": "[{\"path\":\"settings:/kef/play/physicalSource\",\"itemType\":\"update\",\"itemValue\":{\"type\":\"kefPhysicalSource\",\"kefPhysicalSource\":\"wifi\"}},{\"path\":\"settings:/kef/host/speakerStatus\",\"itemType\":\"update\",\"itemValue\":{\"type\":\"kefSpeakerStatus\",\"kefSpeakerStatus\":\"powerOn\"}}]",
+      "expect": {
+        "state": true
+      }
+    },
+    {
+      "description": "Volume limit",
+      "json": "[{\"path\":\"settings:/kef/host/maximumVolume\",\"itemType\":\"update\",\"itemValue\":{\"type\":\"i32_\",\"i32_\":60}}]",
+      "expect": {
+        "device": true
+      }
+    },
+    {
+      "description": "A value that can't be read asks for a full read",
+      "json": "[{\"path\":\"player:volume\",\"itemType\":\"update\"}]",
+      "expect": {
+        "state": true
+      }
+    },
+    {
+      "description": "Not an event list",
+      "json": "{\"error\":{\"message\":\"no queue\"}}",
+      "error": true
+    }
   ]
 }

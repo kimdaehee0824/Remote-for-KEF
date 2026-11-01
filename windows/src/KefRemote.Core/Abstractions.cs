@@ -9,6 +9,10 @@ public enum DriverCapabilities
     Mute = 2,
     Source = 4,
     Power = 8,
+    /// <summary>Reports what is playing and takes play/pause, next and previous.</summary>
+    Playback = 16,
+    /// <summary>Reports changes as they happen (<see cref="ISpeakerDriver.WaitForChangesAsync"/>).</summary>
+    Changes = 32,
 }
 
 public enum PowerState
@@ -44,6 +48,72 @@ public sealed record SpeakerState
     public long SeenAt { get; init; }
 
     public bool Active => Valid && Power == PowerState.On;
+}
+
+public enum PlaybackStatus
+{
+    Stopped,
+    Playing,
+    Paused,
+}
+
+public enum PlaybackCommand
+{
+    TogglePause,
+    Next,
+    Previous,
+}
+
+/// <summary>What the device is playing. Text fields are empty when the source doesn't say.</summary>
+public sealed record PlaybackInfo
+{
+    public static readonly PlaybackInfo None = new();
+
+    public PlaybackStatus Status { get; init; }
+    public string Title { get; init; } = "";
+    public string Artist { get; init; } = "";
+    public string Album { get; init; } = "";
+
+    /// <summary>http(s) URL of the cover, or null.</summary>
+    public string? ArtworkUrl { get; init; }
+
+    /// <summary>Display name of the streaming service, e.g. Spotify, or null.</summary>
+    public string? Service { get; init; }
+
+    /// <summary>Track length in milliseconds, 0 when unknown (radio, physical inputs).</summary>
+    public long DurationMs { get; init; }
+
+    /// <summary>Position in milliseconds when read, -1 when unknown.</summary>
+    public long PositionMs { get; init; } = -1;
+
+    public bool CanTogglePause { get; init; }
+    public bool CanNext { get; init; }
+    public bool CanPrevious { get; init; }
+
+    /// <summary>A track is loaded: something to show.</summary>
+    public bool HasTrack => Status != PlaybackStatus.Stopped && Title.Length > 0;
+}
+
+/// <summary>
+/// What a change report says. Volume and mute carry the reported value so the controller can skip a read when it
+/// already shows it (the echo of its own write); anything else asks for a full read.
+/// </summary>
+public sealed record DeviceChanges
+{
+    public static readonly DeviceChanges None = new();
+
+    public int? Volume { get; init; }
+    public bool? Muted { get; init; }
+
+    /// <summary>Input, power or something without a value here changed: read the state again.</summary>
+    public bool State { get; init; }
+
+    /// <summary>Name or volume limit changed: identify the device again.</summary>
+    public bool Device { get; init; }
+
+    public bool Playback { get; init; }
+
+    public bool Any => Volume != null || Muted != null || State || Device || Playback;
 }
 
 public sealed record DriverOptions(string Host, string? Password = null);
@@ -89,6 +159,24 @@ public interface ISpeakerDriver : IDisposable
     /// the target can be written directly. The controller caps it at the volume limit and only verifies the target.
     /// </summary>
     int? ApproachOvershoot(int current, int target) => null;
+
+    /// <summary>Whether <paramref name="sourceId"/> has track information, e.g. streaming but not a physical input.</summary>
+    bool SourceHasPlayback(string? sourceId) => true;
+
+    /// <summary>Read what is playing. Read only. Only called when <see cref="DriverCapabilities.Playback"/> is present.</summary>
+    Task<PlaybackInfo> ReadPlaybackAsync(CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    Task SendPlaybackAsync(PlaybackCommand command, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+
+    /// <summary>
+    /// Wait until the device reports a change, or for a while and return <see cref="DeviceChanges.None"/>.
+    /// Read only. Only called when <see cref="DriverCapabilities.Changes"/> is present, never two at a time.
+    /// After it throws, the next call starts over (e.g. subscribes again).
+    /// </summary>
+    Task<DeviceChanges> WaitForChangesAsync(CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }
 
 public sealed record DriverDescriptor(

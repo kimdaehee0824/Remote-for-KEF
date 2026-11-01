@@ -99,4 +99,72 @@ public class ProtocolVectorTests
             Assert.Equal(expected, read());
         }
     }
+
+    [Fact]
+    public async Task PlayerControlRequestMatchesVector()
+    {
+        foreach (var c in V.GetProperty("playerControl").EnumerateArray())
+        {
+            var device = new FakeKefDevice(S(c, "password"));
+            var random = new Queue<byte[]>([Hex(c, "saltHex"), Hex(c, "ivHex")]);
+            using var driver = new KefW2Driver(new DriverOptions(S(c, "host"), S(c, "password")), device.Handler)
+            {
+                RandomBytes = _ => random.Dequeue(),
+                UnixTimeMs = () => c.GetProperty("timestampMs").GetInt64(),
+            };
+            await driver.ConnectAsync();
+            var command = Enum.Parse<PlaybackCommand>(S(c, "command"), ignoreCase: true);
+            Assert.Equal(S(c, "value"), KefW2Protocol.ControlValue(command).ToJsonString());
+            await driver.SendPlaybackAsync(command);
+
+            var (request, body) = device.Handler.Requests.Last(r => r.Request.Method == HttpMethod.Post);
+            Assert.Equal(S(c, "body"), body);
+            Assert.Equal(S(c, "header"), request.Headers.GetValues("Authorization").Single());
+        }
+    }
+
+    [Fact]
+    public void PlaybackParsing()
+    {
+        foreach (var c in V.GetProperty("playback").EnumerateArray())
+        {
+            var t = c.GetProperty("playTime");
+            var p = KefW2Protocol.ParsePlayback(S(c, "data"), t.ValueKind == JsonValueKind.Null ? null : t.GetString());
+            var e = c.GetProperty("expect");
+            string what = S(c, "description");
+            Assert.True(S(e, "status") == p.Status.ToString().ToLowerInvariant(), what);
+            Assert.Equal((S(e, "title"), S(e, "artist"), S(e, "album")), (p.Title, p.Artist, p.Album));
+            Assert.Equal(e.GetProperty("artworkUrl").ValueKind == JsonValueKind.Null ? null : S(e, "artworkUrl"), p.ArtworkUrl);
+            Assert.Equal(S(e, "service"), p.Service);
+            Assert.Equal((e.GetProperty("durationMs").GetInt64(), e.GetProperty("positionMs").GetInt64()), (p.DurationMs, p.PositionMs));
+            Assert.Equal((e.GetProperty("canTogglePause").GetBoolean(), e.GetProperty("canNext").GetBoolean(), e.GetProperty("canPrevious").GetBoolean()),
+                (p.CanTogglePause, p.CanNext, p.CanPrevious));
+        }
+    }
+
+    [Fact]
+    public void EventParsing()
+    {
+        var state = new HashSet<string> { KefW2Driver.SourcePath, KefW2Driver.PowerPath };
+        var device = new HashSet<string> { "settings:/kef/host/maximumVolume", "settings:/kef/host/volumeLimit", "settings:/deviceName" };
+        foreach (var c in V.GetProperty("events").EnumerateArray())
+        {
+            DeviceChanges Parse() => KefW2Protocol.ParseChanges(S(c, "json"), KefW2Driver.VolumePath, KefW2Driver.MutePath, state, device);
+            if (c.TryGetProperty("error", out _))
+            {
+                Assert.Throws<SpeakerException>(Parse);
+                continue;
+            }
+            var e = c.GetProperty("expect");
+            var expected = new DeviceChanges
+            {
+                Volume = e.TryGetProperty("volume", out var v) ? v.GetInt32() : null,
+                Muted = e.TryGetProperty("muted", out var m) ? m.GetBoolean() : null,
+                State = e.TryGetProperty("state", out var st) && st.GetBoolean(),
+                Device = e.TryGetProperty("device", out var d) && d.GetBoolean(),
+                Playback = e.TryGetProperty("playback", out var pb) && pb.GetBoolean(),
+            };
+            Assert.Equal(expected, Parse());
+        }
+    }
 }

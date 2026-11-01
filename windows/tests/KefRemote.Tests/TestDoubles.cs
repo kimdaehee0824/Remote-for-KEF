@@ -96,5 +96,60 @@ sealed class FakeDriver : ISpeakerDriver
         return Task.CompletedTask;
     }
 
+    // Playback
+    public PlaybackInfo Playing = PlaybackInfo.None;
+    public int PlaybackReads;
+    public readonly List<PlaybackCommand> PlaybackCommands = [];
+    public bool RejectPlayback;
+    /// <summary>Reads after a command that still show the old player state.</summary>
+    public int PlaybackLagReads;
+    PlaybackInfo? pendingPlayback;
+
+    public bool SourceHasPlayback(string? sourceId) => sourceId == "wifi";
+
+    public Task<PlaybackInfo> ReadPlaybackAsync(CancellationToken ct = default)
+    {
+        PlaybackReads++;
+        if (Broken) throw new HttpRequestException("offline");
+        if (pendingPlayback != null && PlaybackLagReads-- <= 0)
+        {
+            Playing = pendingPlayback;
+            pendingPlayback = null;
+        }
+        return Task.FromResult(Playing);
+    }
+
+    public Task SendPlaybackAsync(PlaybackCommand command, CancellationToken ct = default)
+    {
+        if (RejectPlayback) throw new SpeakerException("rejected");
+        PlaybackCommands.Add(command);
+        var next = command switch
+        {
+            PlaybackCommand.TogglePause => Playing with { Status = Playing.Status == PlaybackStatus.Playing ? PlaybackStatus.Paused : PlaybackStatus.Playing },
+            _ => Playing with { Title = Playing.Title + " (" + command + ")", PositionMs = 0 },
+        };
+        if (PlaybackLagReads > 0) pendingPlayback = next;
+        else Playing = next;
+        return Task.CompletedTask;
+    }
+
+    // Change reports: each WaitForChangesAsync takes the next pending task, which the test completes.
+    public readonly Queue<TaskCompletionSource<DeviceChanges>> ChangeWaits = [];
+    public int ChangeCalls;
+
+    public Task<DeviceChanges> WaitForChangesAsync(CancellationToken ct = default)
+    {
+        ChangeCalls++;
+        var wait = new TaskCompletionSource<DeviceChanges>();
+        ct.Register(() => wait.TrySetCanceled());
+        ChangeWaits.Enqueue(wait);
+        return wait.Task;
+    }
+
+    /// <summary>Completes the oldest pending wait. Continuations run inline, so the controller has acted on return.</summary>
+    public void Report(DeviceChanges changes) => ChangeWaits.Dequeue().SetResult(changes);
+
+    public void FailChanges() => ChangeWaits.Dequeue().SetException(new HttpRequestException("queue gone"));
+
     public void Dispose() { }
 }
