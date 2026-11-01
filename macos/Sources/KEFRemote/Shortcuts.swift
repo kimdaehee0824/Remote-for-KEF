@@ -18,8 +18,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Sendable {
 
     var symbol: String {
         switch self {
-        case .volumeUp: "speaker.plus"
-        case .volumeDown: "speaker.minus"
+        case .volumeUp: "speaker.wave.3"
+        case .volumeDown: "speaker.wave.1"
         case .toggleMute: "speaker.slash"
         }
     }

@@ -439,6 +439,71 @@ struct SpeakerControllerTests {
         #expect(controller.snapshot?.muted == true)
     }
 
+    @Test func volumeUpWhileMutedSetsTheVolumeThenUnmutes() async {
+        let driver = FakeDriver()
+        driver.muted = true
+        let controller = await connected(driver)
+        controller.setVolumeUnmuting(21)
+        #expect(controller.pendingUnmute)
+        await settle(controller)
+        #expect(driver.writes == ["volume=21", "mute=false"])
+        #expect(controller.snapshot?.muted == false)
+        #expect(controller.snapshot?.volume == 21)
+        #expect(!controller.pendingUnmute)
+    }
+
+    @Test func heldVolumeUpWhileMutedKeepsUnmuting() async {
+        let driver = FakeDriver()
+        driver.muted = true
+        let controller = await connected(driver)
+        driver.holdNextRead = true
+        controller.setVolume(21)
+        await waitForHeldRead(driver)
+        controller.setVolumeUnmuting(22)
+        controller.setVolume(24)
+        #expect(controller.pendingVolume == 24)
+        #expect(controller.pendingUnmute)
+        driver.release()
+        await settle(controller)
+        #expect(driver.writes == ["volume=21", "volume=24", "mute=false"])
+        #expect(controller.snapshot?.muted == false)
+    }
+
+    @Test func volumeUpWhileMutedAtTheVolumeOnlyUnmutes() async {
+        let driver = FakeDriver()
+        driver.muted = true
+        let controller = await connected(driver)
+        controller.setVolumeUnmuting(20)
+        await settle(controller)
+        #expect(driver.writes == ["mute=false"])
+    }
+
+    @Test func volumeUpWhileMutedAboveTheLimitStaysMuted() async {
+        let driver = FakeDriver()
+        driver.muted = true
+        driver.volume = 35
+        let controller = await connected(driver)
+        controller.setVolumeUnmuting(36)
+        await settle(controller)
+        #expect(driver.writes.isEmpty)
+        #expect(driver.muted)
+        #expect(controller.notice != nil)
+        #expect(controller.phase == .online)
+    }
+
+    @Test func volumeUpUnmutingIsNotQueuedBehindAMuteCommand() async {
+        let driver = FakeDriver()
+        driver.muted = true
+        let controller = await connected(driver)
+        driver.holdNextRead = true
+        controller.setVolumeUnmuting(21)
+        await waitForHeldRead(driver)
+        controller.toggleMute()
+        driver.release()
+        await settle(controller)
+        #expect(driver.writes == ["volume=21", "mute=false"])
+    }
+
     @Test func standbyAndWake() async {
         let driver = FakeDriver()
         let controller = await connected(driver)

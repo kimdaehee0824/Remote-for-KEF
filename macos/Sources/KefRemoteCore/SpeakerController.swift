@@ -45,6 +45,8 @@ public final class SpeakerController {
     /// Target of the volume command being processed, for display while the
     /// speaker has not confirmed it yet.
     public private(set) var pendingVolume: Int?
+    /// True while a queued or running volume command will also unmute.
+    public private(set) var pendingUnmute = false
     /// Last user-facing message about a refused or stopped command.
     public private(set) var notice: String?
     /// Last input seen while powered on. Used to wake from standby.
@@ -107,6 +109,8 @@ public final class SpeakerController {
 
     private enum Intent: Equatable {
         case volume(Int)
+        /// Sets the volume, then unmutes: volume up while muted, like the system's keys.
+        case volumeUnmuting(Int)
         case volumeStep(Int)
         case toggleMute
         case source(String)
@@ -116,14 +120,14 @@ public final class SpeakerController {
 
         var isVolume: Bool {
             switch self {
-            case .volume, .volumeStep: true
+            case .volume, .volumeUnmuting, .volumeStep: true
             default: false
             }
         }
 
         var activity: Activity {
             switch self {
-            case .volume, .volumeStep: .volume
+            case .volume, .volumeUnmuting, .volumeStep: .volume
             case .toggleMute: .mute
             case let .source(id): .source(id)
             case .standby: .powerOff
@@ -376,6 +380,12 @@ public final class SpeakerController {
         enqueue(.volume(VolumePolicy.clamp(volume)))
     }
 
+    /// Sets the volume and then unmutes, in one command, so it can't be dropped
+    /// behind a separate mute command. The volume is written while still muted.
+    public func setVolumeUnmuting(_ volume: Int) {
+        enqueue(.volumeUnmuting(VolumePolicy.clamp(volume)))
+    }
+
     /// Relative step, resolved against the volume read right before writing.
     public func stepVolume(_ delta: Int) {
         enqueue(.volumeStep(delta))
@@ -428,6 +438,9 @@ public final class SpeakerController {
         switch (old, new) {
         case let (.volumeStep(a), .volumeStep(b)): .volumeStep(a + b)
         case let (.volume(a), .volumeStep(b)): .volume(VolumePolicy.clamp(a + b))
+        // Once a queued command unmutes, the ones merged into it keep doing so.
+        case let (.volumeUnmuting(a), .volumeStep(b)): .volumeUnmuting(VolumePolicy.clamp(a + b))
+        case let (.volumeUnmuting, .volume(b)): .volumeUnmuting(b)
         default: new
         }
     }
@@ -436,6 +449,9 @@ public final class SpeakerController {
         guard let job = queued else { return }
         switch job.intent {
         case let .volume(v): pendingVolume = v
+        case let .volumeUnmuting(v):
+            pendingVolume = v
+            pendingUnmute = true
         case let .volumeStep(d): pendingVolume = VolumePolicy.clamp((pendingVolume ?? snapshot?.volume ?? 0) + d)
         default: break
         }
@@ -448,6 +464,7 @@ public final class SpeakerController {
             isBusy = false
             activity = nil
             pendingVolume = nil
+            pendingUnmute = false
             releaseHeldChanges()
         }
         while let job = queued {
@@ -475,6 +492,9 @@ public final class SpeakerController {
             switch job.intent {
             case let .volume(requested):
                 try await changeVolume(driver, job.token, before, requested: requested, limit: limit, device: device)
+            case let .volumeUnmuting(requested):
+                try await changeVolume(driver, job.token, before, requested: requested, limit: limit, device: device)
+                try await unmuteAfterVolume(driver, job.token, limit: limit, device: device)
             case let .volumeStep(delta):
                 try await changeVolume(driver, job.token, before, requested: before.volume + delta, limit: limit, device: device)
             case .toggleMute:
@@ -505,6 +525,20 @@ public final class SpeakerController {
         } catch {
             goOffline(loc("제어 중지(자동 재시도 없음): \(describe(error))", "Stopped (no automatic retry): \(describe(error))", "操作を停止しました（自動再試行なし）: \(describe(error))"))
         }
+    }
+
+    /// The second half of `volumeUnmuting`: reads again and unmutes unless the
+    /// volume is above the limit, the same rule as the mute button.
+    private func unmuteAfterVolume(_ driver: any SpeakerDriver, _ token: Int, limit: Int, device: DeviceInfo) async throws {
+        guard device.capabilities.contains(.mute) else { return }
+        let now = try await read(driver, token)
+        guard now.muted else { return }
+        if now.volume > limit {
+            throw Stop(message: loc("음량이 상한(\(limit))보다 높아 음소거 해제를 중지했습니다. 음량을 먼저 낮추세요", "Still muted: the volume is above the limit (\(limit)). Lower the volume first", "音量が上限（\(limit)）を超えているため、ミュートを解除しませんでした。先に音量を下げてください"))
+        }
+        try check(token)
+        try await driver.setMute(false)
+        _ = try await verify(driver, token) { !$0.muted && $0.sourceId == now.sourceId }
     }
 
     private func changeVolume(
@@ -832,6 +866,7 @@ public final class SpeakerController {
         generation += 1
         queued = nil
         pendingVolume = nil
+        pendingUnmute = false
     }
 
     private func goOffline(_ message: String) {

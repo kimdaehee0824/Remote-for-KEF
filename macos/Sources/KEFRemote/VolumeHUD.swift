@@ -34,11 +34,14 @@ final class VolumeKeys {
             let direction = action == .volumeUp ? 1 : -1
             let current = controller.pendingVolume ?? state.volume
             let target = VolumeSteps.next(current: current, direction: direction, step: model.volumeKeyStep, limit: limit)
-            // Volume up while muted also unmutes, like the Mac's own volume keys. The unmute
-            // goes first; the volume waits behind it.
-            if direction > 0, state.muted, !controller.isBusy { controller.toggleMute() }
-            if target != current { controller.setVolume(target) }
-            if direction > 0, target == current, current >= limit {
+            // Volume up while muted also unmutes, like the Mac's own volume keys. Both go
+            // as one command, so a held key can't leave the volume behind a separate unmute.
+            if direction > 0, state.muted {
+                controller.setVolumeUnmuting(target)
+            } else if target != current {
+                controller.setVolume(target)
+            }
+            if direction > 0, !state.muted, target == current, current >= limit {
                 hud.show(.limit)
             } else if model.showsVolumeHUD {
                 hud.show(.level)
@@ -243,8 +246,10 @@ struct HUDView: View {
         #endif
     }
 
-    /// The mute state the speaker is heading for while a mute command runs.
+    /// The mute state the speaker is heading for while a mute command runs, or
+    /// while volume up is unmuting.
     private func muteShown(_ controller: SpeakerController) -> Bool {
+        if controller.pendingUnmute { return false }
         let muted = controller.snapshot?.muted ?? false
         if case .mute? = controller.activity { return !muted }
         return muted
