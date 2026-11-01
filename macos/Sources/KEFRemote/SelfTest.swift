@@ -102,6 +102,21 @@ enum SelfTest {
             try await waitFor("switch to finish") { !controller.isBusy }
             try expect(speaker.source == "wifi" && !speaker.muted, "wifi and unmuted")
         }
+        await step("now playing") {
+            try await waitFor("the track") { controller.showsPlayback }
+            try expect(controller.playback.title == speaker.playing.title, "the demo track")
+            try await panel.save(folder, "30-panel-now-playing.png")
+            try await darkPanel.save(folder, "30-panel-now-playing-dark.png")
+            controller.sendPlayback(.togglePause)
+            try await settle()
+            try expect(speaker.commands == [.togglePause] && controller.playback.status == .paused, "paused, got \(speaker.commands) and \(controller.playback.status)")
+            try await panel.save(folder, "31-panel-now-playing-paused.png")
+            model.showsNowPlaying = false
+            try expect(!controller.showsPlayback, "hidden with the setting off")
+            model.showsNowPlaying = true
+            try await waitFor("the track again") { controller.showsPlayback }
+            speaker.playing.status = .playing
+        }
         await step("notice") {
             speaker.volume = 40
             speaker.muted = true
@@ -277,6 +292,13 @@ final class DemoSpeaker {
     var switchDelay: Duration = .zero
     var switching = false
     var writes: [Int] = []
+    var playing = PlaybackInfo(
+        status: .playing,
+        title: loc("조용한 오후", "Quiet Afternoon", "静かな午後"), artist: "Remote for KEF", album: "",
+        service: "AirPlay", durationMs: 214_000, positionMs: 83_000,
+        canTogglePause: true, canNext: true, canPrevious: true
+    )
+    var commands: [PlaybackCommand] = []
 }
 
 @MainActor
@@ -308,7 +330,7 @@ final class DemoDriver: SpeakerDriver {
         }
         return DeviceInfo(
             name: loc("책상 스피커", "Desk speakers", "デスクのスピーカー"), model: speaker.model, firmware: speaker.firmware,
-            capabilities: [.volume, .mute, .source, .power],
+            capabilities: [.volume, .mute, .source, .power, .playback],
             sources: sources,
             deviceVolumeLimit: nil, verifiedModel: known
         )
@@ -343,6 +365,24 @@ final class DemoDriver: SpeakerDriver {
     func setPower(_ on: Bool) async throws {
         try online()
         speaker.on = on
+    }
+
+    /// Like the KEF driver: only the streaming inputs have something playing.
+    nonisolated func sourceHasPlayback(_ sourceId: String?) -> Bool {
+        sourceId == "wifi" || sourceId == "bluetooth"
+    }
+
+    func readPlayback() async throws -> PlaybackInfo {
+        try online()
+        return speaker.playing
+    }
+
+    func sendPlayback(_ command: PlaybackCommand) async throws {
+        try online()
+        speaker.commands.append(command)
+        if command == .togglePause {
+            speaker.playing.status = speaker.playing.status == .playing ? .paused : .playing
+        }
     }
 
     nonisolated func approachOvershoot(current: Int, target: Int) -> Int? {

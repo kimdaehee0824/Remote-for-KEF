@@ -26,6 +26,13 @@ final class AppModel {
     var showsVolumeInMenuBar: Bool {
         didSet { defaults.set(showsVolumeInMenuBar, forKey: Keys.showVolume) }
     }
+    /// What the speaker plays, above the volume in the panel. Off: nothing is read.
+    var showsNowPlaying: Bool {
+        didSet {
+            controller.playbackEnabled = showsNowPlaying
+            defaults.set(showsNowPlaying, forKey: Keys.showNowPlaying)
+        }
+    }
     var approachFromAbove: Bool {
         didSet {
             controller.approachFromAbove = approachFromAbove
@@ -56,6 +63,7 @@ final class AppModel {
         static let host = "speakerHost"
         static let appLimit = "appVolumeLimit"
         static let showVolume = "showVolumeInMenuBar"
+        static let showNowPlaying = "showNowPlaying"
         static let approachFromAbove = "approachFromAbove"
         static let speakerFinish = "speakerFinish"
         static let speakerModels = "speakerModels"
@@ -68,10 +76,12 @@ final class AppModel {
         host = defaults.string(forKey: Keys.host) ?? ""
         hasPassword = usesKeychain && KeychainStore.password() != nil
         showsVolumeInMenuBar = defaults.object(forKey: Keys.showVolume) as? Bool ?? true
+        showsNowPlaying = defaults.object(forKey: Keys.showNowPlaying) as? Bool ?? true
         approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
         speakerFinishID = defaults.string(forKey: Keys.speakerFinish)
         speakerModels = defaults.dictionary(forKey: Keys.speakerModels) as? [String: String] ?? [:]
         controller.approachFromAbove = approachFromAbove
+        controller.playbackEnabled = showsNowPlaying
         if defaults.object(forKey: Keys.appLimit) != nil {
             controller.appLimit = Self.clampLimit(defaults.integer(forKey: Keys.appLimit))
         }

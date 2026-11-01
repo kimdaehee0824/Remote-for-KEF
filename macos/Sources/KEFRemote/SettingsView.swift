@@ -53,10 +53,18 @@ struct GeneralSettings: View {
             } header: {
                 Text(loc("메뉴 막대", "Menu Bar", "メニューバー"))
             }
+            Section {
+                Toggle(isOn: $model.showsNowPlaying) {
+                    Text(loc("재생 중인 곡 표시", "Show what's playing", "再生中の曲を表示"))
+                    Text(loc("Wi-Fi나 블루투스로 재생할 때 음량 위에 곡 정보와 재생 버튼을 보여 줍니다", "When the speaker plays over Wi-Fi or Bluetooth, shows the track and playback buttons above the volume", "Wi-FiやBluetoothで再生しているとき、音量の上に曲の情報と再生ボタンを表示します"))
+                }
+            } header: {
+                Text(loc("패널", "Panel", "パネル"))
+            }
             UpdateSettings()
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 440)
+        .frame(width: 500, height: 520)
         .onAppear { model.refreshLoginItemStatus() }
     }
 }
