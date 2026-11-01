@@ -276,6 +276,29 @@ struct KefW2DriverTests {
         let turningOff = try await driver.read()
         #expect(turningOff.power == .standby)
         #expect(turningOff.sourceId == nil)
+        #expect(!turningOff.onPreviousInput)
+    }
+
+    /// Seen on LSX II LT 2.1.86 after waking with `powerOn`: the input setting kept reading `powerOn` for minutes
+    /// while the speaker was on, until the input changed.
+    @Test func powerOnAsTheInputMeansThePreviousInput() async throws {
+        let device = FakeKefDevice()
+        let driver = try makeDriver(device)
+        _ = try await driver.connect()
+        await device.set("settings:/kef/play/physicalSource", #"[{"type":"kefPhysicalSource","kefPhysicalSource":"powerOn"}]"#)
+        let on = try await driver.read()
+        #expect(on.power == .on)
+        #expect(on.sourceId == nil)
+        #expect(on.onPreviousInput)
+        await device.set("settings:/kef/host/speakerStatus", #"[{"type":"kefSpeakerStatus","kefSpeakerStatus":"standby"}]"#)
+        let waking = try await driver.read()
+        #expect(waking.power == .standby)
+        #expect(waking.onPreviousInput)
+        await device.set("settings:/kef/play/physicalSource", #"[{"type":"kefPhysicalSource","kefPhysicalSource":"usb"}]"#)
+        await device.set("settings:/kef/host/speakerStatus", #"[{"type":"kefSpeakerStatus","kefSpeakerStatus":"powerOn"}]"#)
+        let named = try await driver.read()
+        #expect(named.sourceId == "usb")
+        #expect(!named.onPreviousInput)
     }
 
     @MainActor @Test func controllerEndToEnd() async throws {

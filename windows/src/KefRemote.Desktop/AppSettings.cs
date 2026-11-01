@@ -34,6 +34,12 @@ public sealed class AppSettings
     /// </summary>
     public Dictionary<string, string> SpeakerModels { get; set; } = [];
 
+    /// <summary>
+    /// Last input seen per speaker address. A speaker woken with the power switch doesn't say which input it came
+    /// back on, so the flyout shows this one, also after the app restarts.
+    /// </summary>
+    public Dictionary<string, string> LastInputs { get; set; } = [];
+
     /// <summary>The one-time notice that closing the settings window keeps the app in the tray was shown.</summary>
     public bool TrayNoticeShown { get; set; }
 

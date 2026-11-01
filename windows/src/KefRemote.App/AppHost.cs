@@ -102,6 +102,7 @@ sealed class AppHost : IDisposable
         Controller.AppVolumeLimit = Settings.AppVolumeLimit;
         Controller.ApproachFromAbove = Settings.ApproachFromAbove;
         Controller.Changed += OnControllerChanged;
+        Controller.LastActiveSourceChanged += OnLastActiveSourceChanged;
 
         messages = new MessageWindow();
         tray = new TrayIcon(messages, queue);
@@ -195,7 +196,7 @@ sealed class AppHost : IDisposable
                 return;
             }
             configurationError = false;
-            bool ok = await Controller.ConnectAsync(driver);
+            bool ok = await Controller.ConnectAsync(driver, Settings.LastInputs.GetValueOrDefault(Settings.Host));
             ConnectFailures = ok ? 0 : ConnectFailures + 1;
             if (ok) lastDeviceRefresh = Environment.TickCount64;
         }
@@ -429,6 +430,13 @@ sealed class AppHost : IDisposable
         volumeKeys.Tolerance = Controller.Driver?.VolumeTolerance ?? 0;
         UpdateTray();
         Changed?.Invoke();
+    }
+
+    void OnLastActiveSourceChanged(string source)
+    {
+        if (!Settings.IsConfigured || Settings.LastInputs.GetValueOrDefault(Settings.Host) == source) return;
+        Settings.LastInputs[Settings.Host] = source;
+        store.Save(Settings);
     }
 
     void UpdateTray() => tray.Update(SpeakerPresentation.Glyph(Controller), SpeakerPresentation.Tooltip(Controller, Settings.IsConfigured));

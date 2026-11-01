@@ -50,6 +50,11 @@ final class AppModel {
     private var speakerModels: [String: String] {
         didSet { defaults.set(speakerModels, forKey: Keys.speakerModels) }
     }
+    /// Last input seen per speaker address. A speaker woken with the power switch doesn't say
+    /// which input it came back on, so the panel shows this one, also after the app restarts.
+    @ObservationIgnored private var lastInputs: [String: String] {
+        didSet { defaults.set(lastInputs, forKey: Keys.lastInputs) }
+    }
     /// Global shortcuts. An action that isn't in here is off.
     private(set) var shortcuts: [ShortcutAction: Shortcut]
     /// Actions whose shortcut couldn't be registered, usually because another app holds it.
@@ -87,6 +92,7 @@ final class AppModel {
         static let approachFromAbove = "approachFromAbove"
         static let speakerFinish = "speakerFinish"
         static let speakerModels = "speakerModels"
+        static let lastInputs = "lastInputs"
         static let shortcuts = "shortcuts"
         static let volumeKeyStep = "volumeKeyStep"
         static let showVolumeHUD = "showVolumeHUD"
@@ -103,12 +109,17 @@ final class AppModel {
         approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
         speakerFinishID = defaults.string(forKey: Keys.speakerFinish)
         speakerModels = defaults.dictionary(forKey: Keys.speakerModels) as? [String: String] ?? [:]
+        lastInputs = defaults.dictionary(forKey: Keys.lastInputs) as? [String: String] ?? [:]
         shortcuts = Self.loadShortcuts(defaults.data(forKey: Keys.shortcuts))
         let step = defaults.object(forKey: Keys.volumeKeyStep) as? Int ?? 1
         volumeKeyStep = VolumeSteps.choices.contains(step) ? step : 1
         showsVolumeHUD = defaults.object(forKey: Keys.showVolumeHUD) as? Bool ?? true
         controller.approachFromAbove = approachFromAbove
         controller.playbackEnabled = showsNowPlaying
+        controller.lastActiveSourceChanged = { [weak self] source in
+            guard let self, !self.host.isEmpty else { return }
+            self.lastInputs[self.host] = source
+        }
         if defaults.object(forKey: Keys.appLimit) != nil {
             controller.appLimit = Self.clampLimit(defaults.integer(forKey: Keys.appLimit))
         }
@@ -189,7 +200,8 @@ final class AppModel {
 
     func connect(using driver: any SpeakerDriver) {
         deviceReadAt = .now
-        Task { await controller.connect(driver) }
+        let lastInput = lastInputs[host]
+        Task { await controller.connect(driver, lastInput: lastInput) }
     }
 
     // MARK: Panel

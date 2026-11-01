@@ -35,7 +35,7 @@ A response is a one-element array holding a typed object `{"type": T, T: value}`
 | Model code | `settings:/kef/host/modelName` | `string_`, LSX II LT returns `SP4077` | observed |
 | Release text | `settings:/releasetext` | `string_`, e.g. `LSXIILT_V2186` | observed |
 | Auth policy | `settings:/webserver/authMode` | `webserverAuthMode`: `none`, `setData`, `all` | observed `setData` |
-| Input | `settings:/kef/play/physicalSource` | `kefPhysicalSource`: `usb`, `wifi`, `bluetooth`, `tv`, `optical`, `coaxial`, `analog`, `standby` | observed `usb`, `wifi`, `standby` |
+| Input | `settings:/kef/play/physicalSource` | `kefPhysicalSource`: `usb`, `wifi`, `bluetooth`, `tv`, `optical`, `coaxial`, `analog`, `standby`, `powerOn` | observed `usb`, `wifi`, `standby`, `powerOn` |
 | Volume | `player:volume` | `i32_`, 0-100 | observed |
 | Mute | `settings:/mediaPlayer/mute` | `bool_` | observed |
 | Power | `settings:/kef/host/speakerStatus` | `kefSpeakerStatus`: `powerOn`, `standby` | observed `powerOn`, `standby` |
@@ -89,6 +89,7 @@ If `authMode` cannot be read, or the device answers 401/403, an HTML page, or an
 - A `usb` reading confirms the speaker's input only. It says nothing about the PC's audio output device.
 - `physicalSource` changes before `speakerStatus` in both directions (firmware 2.1.86, read every 150 ms). Waking, the input comes back about 1.8 s before `speakerStatus` turns `powerOn`. Turning off, `physicalSource` reads `standby` about 0.4 s before `speakerStatus` does. The apps therefore take `physicalSource` `standby` as standby, and an input while `speakerStatus` is still `standby` as waking: the input is shown at once and commands wait for `powerOn`.
 - With `settings:/kef/host/wakeUpSource` at `wakeup_default` the speaker woke on the input it had before standby.
+- After waking with `powerOn`, `physicalSource` can keep reading `powerOn` while `speakerStatus` reads `powerOn` (firmware 2.1.86: still so several minutes later, until the input changed to `usb` and then `wifi`; what ended it wasn't recorded, and whether the speaker was playing meanwhile wasn't checked). The apps confirm a wake by `speakerStatus` alone and show such an input as the last one they saw while on (kept per speaker address across launches). After a wake of their own they then write that input with the usual muted switch, so the speaker is surely on it and names it; picking the shown input does the same. Polls only read. Before any input was seen, the input stays unnamed and the panel says so until one is picked.
 - Waking can take much longer than those 2 s: the speaker was seen coming on only after the apps had stopped waiting (about 10 s on Windows, 6 s on macOS). The apps now read every 0.5 s for the first 5 s, then every second, for about 30 s. A speaker that reads fine but is not on by then is reported as still turning on, not as a failure, and the message goes as soon as a later read finds it on.
 
 ## Change reports (event queue)

@@ -44,6 +44,13 @@ public sealed record SpeakerState
     public bool Muted { get; init; }
     public bool Valid { get; init; }
 
+    /// <summary>
+    /// The device is on, or waking, on the input it had before standby but doesn't say which: a KEF W2 speaker
+    /// woken with <c>powerOn</c> keeps reporting <c>powerOn</c> as its input until the input is switched.
+    /// The controller names it after the last input it saw while on.
+    /// </summary>
+    public bool OnPreviousInput { get; init; }
+
     /// <summary>Monotonic timestamp (ms) set by the controller when the snapshot arrived.</summary>
     public long SeenAt { get; init; }
 

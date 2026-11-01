@@ -98,6 +98,126 @@ public class SpeakerControllerPowerTests
     }
 
     [Fact]
+    public async Task PowerOnToAnUnnamedInputShowsTheLastInputAtOnce()
+    {
+        var f = new FakeDriver { HidesInputAfterPowerOn = true };
+        var c = await Connected(f);
+        await c.PowerOffAsync();
+        int readsBefore = f.Reads;
+        await c.PowerOnAsync();
+        // On with the first read that says so, not after the 30 s wait; then the last input is written with the
+        // muted switch (mute, source, unmute), so the speaker surely plays it and names it.
+        Assert.Equal((SpeakerPhase.On, "usb", false, 5), (c.Phase, c.State.SourceId, c.State.Muted, f.Writes));
+        Assert.False(c.State.OnPreviousInput);
+        Assert.True(f.Reads - readsBefore <= 5);
+        Assert.Equal(SpeakerOperation.None, c.Operation);
+        Assert.Null(c.Notice);
+        Assert.True(c.CanControl);
+    }
+
+    [Fact]
+    public async Task RestoredInputCountsOnlyOnceTheSpeakerNamesIt()
+    {
+        var f = new FakeDriver { HidesInputAfterPowerOn = true, UnnamedReadsAfterSource = 3 };
+        var c = await Connected(f);
+        await c.PowerOffAsync();
+        await c.PowerOnAsync();
+        Assert.Equal(("usb", false, false, 5), (c.State.SourceId, c.State.OnPreviousInput, c.State.Muted, f.Writes));
+        Assert.Null(c.Notice);
+    }
+
+    [Fact]
+    public async Task RestoreTheSpeakerIgnoresStaysMutedAndSaysSo()
+    {
+        var f = new FakeDriver { HidesInputAfterPowerOn = true, UnnamedReadsAfterSource = 1000 };
+        var c = await Connected(f);
+        await c.PowerOffAsync();
+        await c.PowerOnAsync();
+        // power off, power on, mute, source: never unmuted on a volume read before the input was confirmed.
+        Assert.Equal((true, 4), (f.Muted, f.Writes));
+        Assert.NotNull(c.Notice);
+        Assert.Equal(SpeakerPhase.On, c.Phase);
+    }
+
+    [Fact]
+    public async Task UnnamedInputFoundByPollingIsShownAndWrittenOnlyWhenPicked()
+    {
+        var f = new FakeDriver { HidesInputAfterPowerOn = true };
+        var c = await Connected(f);
+        await c.PowerOffAsync();
+        // Woken elsewhere: polls only read, and keep naming it so nothing looks like an input changed elsewhere.
+        await f.SetPowerAsync(true);
+        now += 1000;
+        await c.PollAsync();
+        now += 1000;
+        await c.PollAsync();
+        Assert.Equal((SpeakerPhase.On, "usb", true, 2), (c.Phase, c.State.SourceId, c.State.OnPreviousInput, f.Writes));
+        Assert.Null(c.Notice);
+        // Picking the input it is shown on writes it (mute, source, unmute).
+        await c.SelectSourceAsync("usb");
+        Assert.Equal(("usb", false, false, 5), (c.State.SourceId, c.State.OnPreviousInput, c.State.Muted, f.Writes));
+    }
+
+    [Fact]
+    public async Task PowerOnToAnUnnamedInputWithoutALastInputDoesNotWait()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, HidesInputAfterPowerOn = true };
+        var c = await Connected(f);
+        Assert.Null(c.LastActiveSource);
+        await c.PowerOnAsync();
+        Assert.Equal((SpeakerPhase.On, null, 1), (c.Phase, c.State.SourceId, f.Writes));
+        Assert.Null(c.Notice);
+        Assert.True(f.Reads <= 3);
+        // Picking an input still works and names it from then on.
+        await c.SelectSourceAsync("wifi");
+        Assert.Equal(("wifi", "wifi", false), (c.State.SourceId, c.LastActiveSource, c.State.Muted));
+    }
+
+    [Fact]
+    public async Task PowerOnFromAnUnnamedInputToAnotherSwitchesMuted()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, HidesInputAfterPowerOn = true };
+        var c = await Connected(f);
+        await c.PowerOnAsync("wifi");
+        // power, mute, source, unmute
+        Assert.Equal((PowerState.On, "wifi", false, 4), (f.Power, c.State.SourceId, f.Muted, f.Writes));
+        Assert.Null(c.Notice);
+    }
+
+    [Fact]
+    public async Task LastInputFromAnEarlierLaunchNamesTheInput()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, Source = "wifi", HidesInputAfterPowerOn = true, Capabilities = DriverCapabilities.Volume | DriverCapabilities.Mute | DriverCapabilities.Source | DriverCapabilities.Power };
+        var c = new SpeakerController { Clock = () => now, Delay = (_, _) => Task.CompletedTask };
+        var saved = new List<string>();
+        c.LastActiveSourceChanged += saved.Add;
+        Assert.True(await c.ConnectAsync(f, lastInput: "wifi"));
+        Assert.Equal("wifi", c.LastActiveSource);
+        await c.PowerOnAsync();
+        Assert.Equal("wifi", c.State.SourceId);
+        Assert.Empty(saved);
+        await c.SelectSourceAsync("usb");
+        Assert.Equal("usb", c.State.SourceId);
+        Assert.Equal(["usb"], saved);
+    }
+
+    [Fact]
+    public async Task UnnamedInputStillWakingCountsAsWaking()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, HidesInputAfterPowerOn = true, WakingReadsAfterPowerOn = 1000 };
+        var c = await Connected(f);
+        await c.PowerOnAsync();
+        Assert.Equal((SpeakerPhase.Standby, null), (c.Phase, c.State.SourceId));
+        Assert.True(c.IsWaking);
+        Assert.False(c.CanPowerOn);
+        f.WakingReads = 0;
+        now += 500;
+        await c.PollAsync();
+        Assert.Equal(SpeakerPhase.On, c.Phase);
+        Assert.Null(c.Notice);
+    }
+
+    [Fact]
     public async Task PowerOnToOtherInputSwitchesMuted()
     {
         var f = new FakeDriver { Power = PowerState.Standby };

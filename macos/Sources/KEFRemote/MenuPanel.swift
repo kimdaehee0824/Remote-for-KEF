@@ -499,6 +499,13 @@ private struct SourceSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
+            } else if waitingOn == nil, state.sourceId == nil {
+                // Woken with the power switch before the app ever saw an input: the speaker doesn't say which.
+                Text(wrapping: loc("스피커가 지금 입력을 알려 주지 않습니다. 입력을 고르면 표시됩니다.", "The speaker isn't saying which input it's on. It shows once you pick one.", "スピーカーが現在の入力を知らせていません。入力を選ぶと表示されます。"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
             }
         }
     }

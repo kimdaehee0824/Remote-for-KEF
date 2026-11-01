@@ -45,8 +45,26 @@ sealed class FakeDriver : ISpeakerDriver
         if (Broken) throw new HttpRequestException("offline");
         bool waking = Power == PowerState.On && WakingReads > 0;
         if (waking) WakingReads--;
-        return new SpeakerState { Power = waking ? PowerState.Standby : Power, SourceId = Power == PowerState.Standby ? null : Source, Volume = Volume, Muted = Muted, Valid = true };
+        bool hidden = Power == PowerState.On && hidingInput;
+        if (hidden && unnamedLag > 0 && --unnamedLag == 0) hidingInput = false;
+        return new SpeakerState
+        {
+            Power = waking ? PowerState.Standby : Power,
+            SourceId = Power == PowerState.Standby || hidden ? null : Source,
+            Volume = Volume, Muted = Muted, Valid = true, OnPreviousInput = hidden,
+        };
     }
+
+    /// <summary>
+    /// Woken with the power switch, the input reads as unnamed until it is switched, like KEF W2 speakers that keep
+    /// reporting "powerOn" as the input.
+    /// </summary>
+    public bool HidesInputAfterPowerOn;
+    bool hidingInput;
+
+    /// <summary>Reads after a source write that still show the input unnamed, like a speaker slow to leave "powerOn" or one that ignored the write.</summary>
+    public int UnnamedReadsAfterSource;
+    int unnamedLag;
 
     /// <summary>Reads that show the input back but the power status still in standby, like the W2 firmware waking.</summary>
     public int WakingReads, WakingReadsAfterPowerOn;
@@ -72,6 +90,7 @@ sealed class FakeDriver : ISpeakerDriver
         if (PowerLagReads > 0) pendingPower = on ? PowerState.On : PowerState.Standby;
         else Power = on ? PowerState.On : PowerState.Standby;
         if (on) WakingReads = WakingReadsAfterPowerOn;
+        hidingInput = on && HidesInputAfterPowerOn;
         return Task.CompletedTask;
     }
 
@@ -91,6 +110,8 @@ sealed class FakeDriver : ISpeakerDriver
         Writes++;
         VolumePerSource[Source] = Volume;
         Source = sourceId;
+        if (hidingInput && UnnamedReadsAfterSource > 0) unnamedLag = UnnamedReadsAfterSource;
+        else hidingInput = false;
         if (VolumePerSource.TryGetValue(sourceId, out int v)) Volume = v;
         if (ResetMuteOnSource) Muted = false;
         return Task.CompletedTask;

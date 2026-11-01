@@ -15,7 +15,7 @@ sources      : [ { id, label } ]                         # empty unless `source`
 volumeTolerance : int (default 0)                        # read-back tolerance when a native scale is mapped to 0-100
 
 connect() -> DeviceInfo { name, model, firmware, deviceVolumeLimit? }   # read only
-read()    -> SpeakerState { power: on|standby|unknown, sourceId?, volume 0-100, muted }   # read only
+read()    -> SpeakerState { power: on|standby|unknown, sourceId?, volume 0-100, muted, onPreviousInput }   # read only; onPreviousInput: on or waking on the input it had before standby without naming it
 setVolume(int 0-100)
 setMute(bool)
 setSource(id)

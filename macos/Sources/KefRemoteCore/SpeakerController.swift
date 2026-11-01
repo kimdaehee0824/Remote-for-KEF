@@ -16,6 +16,8 @@ import Observation
 /// - Change reports from the device (`SpeakerDriver.waitForChanges`) only
 ///   trigger reads. While they arrive, polling slows to a heartbeat; when they
 ///   fail, polling takes over at the usual pace.
+/// - A speaker on the input it had before standby that doesn't say which
+///   (`SpeakerSnapshot.onPreviousInput`) is shown on the last input seen while on.
 @MainActor
 @Observable
 public final class SpeakerController {
@@ -49,8 +51,11 @@ public final class SpeakerController {
     public private(set) var pendingUnmute = false
     /// Last user-facing message about a refused or stopped command.
     public private(set) var notice: String?
-    /// Last input seen while powered on. Used to wake from standby.
+    /// Last input seen while powered on. Used to wake from standby, and to name
+    /// the input of a speaker that woke on it without saying so.
     public private(set) var lastActiveSource: String?
+    /// Called when `lastActiveSource` changes, so the app can keep it for the next launch.
+    @ObservationIgnored public var lastActiveSourceChanged: (@MainActor (String) -> Void)?
     /// What the speaker is playing. `.none` while `playbackEnabled` is off.
     public private(set) var playback: PlaybackInfo = .none
     /// Change reports are arriving, so polling is only a heartbeat.
@@ -83,7 +88,10 @@ public final class SpeakerController {
     /// Coming out of standby: the input is back but the power status, about
     /// 2 s behind it, still says standby. Commands wait for the power status;
     /// the panel already shows the input.
-    public var isWaking: Bool { isOnline && snapshot?.power == .standby && snapshot?.sourceId != nil }
+    public var isWaking: Bool {
+        guard isOnline, let snapshot, snapshot.power == .standby else { return false }
+        return snapshot.sourceId != nil || snapshot.onPreviousInput
+    }
     public var isAboveLimit: Bool { (snapshot?.volume ?? 0) > effectiveLimit }
     /// True when the KEF device maximum, not the app limit, is what stops the volume.
     public var limitFromDevice: Bool {
@@ -220,13 +228,15 @@ public final class SpeakerController {
 
     // MARK: Connection
 
-    /// Replaces the driver and connects read-only.
-    public func connect(_ driver: any SpeakerDriver) async {
+    /// Replaces the driver and connects read-only. `lastInput` is the last
+    /// input this speaker was seen on before, e.g. in an earlier launch.
+    public func connect(_ driver: any SpeakerDriver, lastInput: String? = nil) async {
         stopListening()
         driverEpoch += 1
         self.driver = driver
         update(\.device, nil)
         update(\.snapshot, nil)
+        update(\.lastActiveSource, lastInput)
         // A confirmation still running for the old driver stops at the epoch check and leaves this alone.
         playbackConfirming = false
         setPlayback(.none)
@@ -272,7 +282,7 @@ public final class SpeakerController {
         let token = generation
         let epoch = stateEpoch
         do {
-            let state = try await driver.read()
+            let state = try await named(driver.read())
             guard token == generation else { return false }
             // A command finished while this read was in flight; its read is newer.
             guard epoch == stateEpoch, !isBusy else { return true }
@@ -312,7 +322,7 @@ public final class SpeakerController {
         do {
             let info = try await driver.connect()
             guard token == generation else { return false }
-            let state = try await driver.read()
+            let state = try await named(driver.read(), sources: info.sources)
             guard token == generation else { return false }
             update(\.device, info)
             apply(state)
@@ -568,14 +578,17 @@ public final class SpeakerController {
 
     /// Mute, verify, switch, verify. Unmute again only when the new input is
     /// not louder than before and within the limit; otherwise stay muted.
+    /// `restoring`: the input the speaker should already be on is written again
+    /// after a wake, so staying muted as before needs no notice.
     private func switchSource(
         _ driver: any SpeakerDriver, _ token: Int, _ before: SpeakerSnapshot,
-        to target: String, limit: Int, device: DeviceInfo
+        to target: String, limit: Int, device: DeviceInfo, restoring: Bool = false
     ) async throws {
         guard device.capabilities.contains(.source), device.sources.contains(where: { $0.id == target }) else {
             throw Stop(message: loc("지원하지 않는 입력입니다", "This input isn't supported", "対応していない入力です"))
         }
-        guard before.sourceId != target else { return }
+        // An input only shown as the last one (`onPreviousInput`) is written anyway, so the speaker is surely on it.
+        guard before.sourceId != target || before.onPreviousInput else { return }
         guard before.volume <= limit else {
             throw Stop(message: loc("음량을 상한(\(limit)) 이하로 낮춘 뒤 전환하세요", "Lower the volume to the limit (\(limit)) or below before switching", "音量を上限（\(limit)）以下に下げてから切り替えてください"))
         }
@@ -587,9 +600,17 @@ public final class SpeakerController {
         }
         try check(token)
         try await driver.setSource(target)
-        let after = try await verify(driver, token) { $0.sourceId == target && $0.muted }
+        // Only an input the speaker names counts: one shown as the last input would pass at once.
+        // Leaving an unnamed input may take a while, as power changes do.
+        let settling = before.onPreviousInput
+        let after = try await verify(
+            driver, token, attempts: settling ? powerVerifyAttempts : nil, delay: settling ? powerVerifyDelay : nil,
+            tolerateTransient: settling
+        ) { $0.sourceId == target && $0.muted && !$0.onPreviousInput }
         guard !wasMuted else {
-            notice = loc("입력을 바꿨습니다. 원래 음소거 상태를 유지합니다", "Input switched. It stays muted as before", "入力を切り替えました。ミュートは元のままです")
+            if !restoring {
+                notice = loc("입력을 바꿨습니다. 원래 음소거 상태를 유지합니다", "Input switched. It stays muted as before", "入力を切り替えました。ミュートは元のままです")
+            }
             return
         }
         guard after.volume <= before.volume, after.volume <= limit else {
@@ -622,10 +643,12 @@ public final class SpeakerController {
             try await driver.setPower(true)
             let quickAttempts = wakeQuickAttempts, quick = powerVerifyDelay, slow = wakeSlowDelay
             do {
+                // The power status alone says it is on. The input may stay unnamed for good
+                // (`onPreviousInput` before any input was seen), so it isn't waited for.
                 on = try await verify(
                     driver, token, attempts: wakeAttempts, tolerateTransient: true,
                     delays: { $0 < quickAttempts ? quick : slow }
-                ) { $0.power == .on && $0.sourceId != nil }
+                ) { $0.power == .on }
             } catch is VerificationError {
                 // Every read worked, the speaker just isn't on yet. Not a
                 // failure: it stays online, polling shows it as on once it
@@ -644,8 +667,18 @@ public final class SpeakerController {
             notice = loc("켜졌습니다. 음량(\(on.volume))이 상한(\(limit))보다 높으니 먼저 낮추세요", "Turned on. The volume (\(on.volume)) is above the limit (\(limit)); lower it first", "電源が入りました。音量（\(on.volume)）が上限（\(limit)）を超えているので、先に下げてください")
             return
         }
-        if let target, device.capabilities.contains(.source) {
+        guard device.capabilities.contains(.source) else { return }
+        if let target {
             try await switchSource(driver, token, on, to: target, limit: limit, device: device)
+        } else if on.onPreviousInput, let last = on.sourceId {
+            // Woken without naming its input: the last input is written with the usual muted
+            // switch, so the speaker is surely on it and says so. Unknown, it is left as it is.
+            do {
+                try await switchSource(driver, token, on, to: last, limit: limit, device: device, restoring: true)
+            } catch let error where !(error is Cancelled) && !(error is Stop) {
+                // The speaker is on and reads fine; polls notice if it went away.
+                notice = loc("켜졌지만 입력을 다시 지정하지 못했습니다. 음소거된 채일 수 있으니 입력을 직접 고르세요", "Turned on, but the input couldn't be set again and may still be muted. Pick the input yourself", "電源は入りましたが、入力を指定し直せませんでした。ミュートのままの可能性があるので、入力を選んでください")
+            }
         }
     }
 
@@ -798,7 +831,7 @@ public final class SpeakerController {
     // MARK: Helpers
 
     private func read(_ driver: any SpeakerDriver, _ token: Int) async throws -> SpeakerSnapshot {
-        let state = try await driver.read()
+        let state = try await named(driver.read())
         try check(token)
         apply(state)
         stateEpoch += 1
@@ -838,8 +871,22 @@ public final class SpeakerController {
         if playbackEnabled, previous?.sourceId != state.sourceId || previous?.power != state.power {
             Task { await refreshPlayback() }
         }
-        if state.power == .on, let source = state.sourceId { update(\.lastActiveSource, source) }
+        if state.power == .on, let source = state.sourceId, source != lastActiveSource {
+            lastActiveSource = source
+            lastActiveSourceChanged?(source)
+        }
         if state.power == .on, let wake = lateWake { finishLateWake(wake, state) }
+    }
+
+    /// Names the input of a speaker on the input it had before standby that
+    /// doesn't say which (`onPreviousInput`): the last input seen while on.
+    /// Left unnamed when there is none, or it isn't one of the device's inputs.
+    private func named(_ state: SpeakerSnapshot, sources: [SourceOption]? = nil) -> SpeakerSnapshot {
+        guard state.sourceId == nil, state.onPreviousInput, let last = lastActiveSource,
+              (sources ?? device?.sources ?? []).contains(where: { $0.id == last }) else { return state }
+        var result = state
+        result.sourceId = last
+        return result
     }
 
     /// The speaker came on after a wake stopped waiting for it. The notice

@@ -417,8 +417,12 @@ sealed class FlyoutView
             tiles.Visibility = Show(showTiles);
             sourcesLabel.Text = standby ? Loc.T("이 입력으로 켜기", "Turn on with this input", "この入力で電源を入れる") : Loc.T("입력", "Input", "入力");
             if (showTiles) RefreshTiles(standby, switchingTo);
-            standbyNote.Visibility = Show(standby);
-            standbyNote.Text = Korean.KeepWords(canPower
+            // Woken with the power switch before the app ever saw an input: the speaker doesn't say which.
+            bool unnamedInput = on && showTiles && c.State.SourceId == null && switchingTo == null;
+            standbyNote.Visibility = Show(standby || unnamedInput);
+            standbyNote.Text = Korean.KeepWords(unnamedInput
+                ? Loc.T("스피커가 지금 입력을 알려 주지 않습니다. 입력을 고르면 표시됩니다.", "The speaker isn't saying which input it's on. It shows once you pick one.", "スピーカーが現在の入力を知らせていません。入力を選ぶと表示されます。")
+                : canPower
                 ? Loc.T("테두리 친 타일이 마지막 입력입니다. 켜기 전에 음량이 상한 이하인지 확인합니다.", "The outlined tile is the last input. Before turning on, the app checks that the volume is within the limit.", "枠で囲まれたタイルが最後の入力です。電源を入れる前に、音量が上限以下か確認します。")
                 : Loc.T("이 기기는 앱에서 켤 수 없습니다. 리모컨으로 켜 주세요.", "This device can't be turned on from the app. Turn it on with the remote.", "この機器はアプリから電源を入れられません。リモコンで入れてください。"));
 
@@ -607,7 +611,8 @@ sealed class FlyoutView
     {
         var c = host.Controller;
         bool standby = c.Phase == SpeakerPhase.Standby;
-        if (!standby && c.State.SourceId == sourceId)
+        // An input only shown as the last one (OnPreviousInput) can be picked to make it certain.
+        if (!standby && c.State.SourceId == sourceId && !c.State.OnPreviousInput)
         {
             Refresh(); // undo the toggle on the tile that is already selected
             return;

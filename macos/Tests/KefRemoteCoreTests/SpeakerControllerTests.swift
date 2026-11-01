@@ -19,6 +19,14 @@ final class FakeDriver: SpeakerDriver {
     /// Reads that show the input back but the power status still in standby, like the W2 firmware waking.
     var wakingReads = 0
     var wakingReadsAfterPower = 0
+    /// Woken with the power switch, the input reads as unnamed until it is switched, like KEF W2 speakers
+    /// that keep reporting `powerOn` as the input.
+    var hidesInputAfterWake = false
+    private var hidingInput = false
+    /// Reads after a source write that still show the input unnamed, like a speaker slow to leave `powerOn`
+    /// or one that ignored the write.
+    var unnamedReadsAfterSource = 0
+    private var unnamedLag = 0
     /// Suspends the next read until `release()` is called.
     var holdNextRead = false
     private var held: CheckedContinuation<Void, Never>?
@@ -60,7 +68,15 @@ final class FakeDriver: SpeakerDriver {
         }
         let waking = power == .on && wakingReads > 0
         if waking { wakingReads -= 1 }
-        return SpeakerSnapshot(power: waking ? .standby : power, sourceId: power == .on ? source : nil, volume: volume, muted: muted)
+        let hidden = power == .on && hidingInput
+        if hidden, unnamedLag > 0 {
+            unnamedLag -= 1
+            if unnamedLag == 0 { hidingInput = false }
+        }
+        return SpeakerSnapshot(
+            power: waking ? .standby : power, sourceId: power == .on && !hidden ? source : nil,
+            volume: volume, muted: muted, onPreviousInput: hidden
+        )
     }
 
     func setVolume(_ volume: Int) async throws {
@@ -77,6 +93,7 @@ final class FakeDriver: SpeakerDriver {
         writes.append("source=\(sourceId)")
         source = sourceId
         power = .on
+        if hidingInput, unnamedReadsAfterSource > 0 { unnamedLag = unnamedReadsAfterSource } else { hidingInput = false }
         if resetMuteOnSource { muted = false }
     }
 
@@ -86,6 +103,7 @@ final class FakeDriver: SpeakerDriver {
         power = on ? .on : .standby
         failingReads = failuresAfterPower
         if on { wakingReads = wakingReadsAfterPower }
+        hidingInput = on && hidesInputAfterWake
     }
 
     nonisolated func approachOvershoot(current: Int, target: Int) -> Int? {
@@ -153,6 +171,11 @@ final class ChangeFlag: @unchecked Sendable {
 /// Pauses the controller asked for, in order.
 final class SleepLog: @unchecked Sendable {
     var durations: [Duration] = []
+}
+
+@MainActor
+final class SavedInputs {
+    var values: [String] = []
 }
 
 @MainActor
@@ -645,6 +668,150 @@ struct SpeakerControllerTests {
         #expect(controller.snapshot?.sourceId == "usb")
         #expect(controller.notice != nil)
         #expect(driver.writes == ["power=on"])
+    }
+
+    @Test func wakeOnAnUnnamedInputShowsTheLastInputAtOnce() async {
+        let driver = FakeDriver()
+        driver.hidesInputAfterWake = true
+        let controller = await connected(driver)
+        controller.standby()
+        await settle(controller)
+        let readsBefore = driver.reads
+        controller.wake()
+        await settle(controller)
+        // On with the first read that says so, not after the 30 s wait; then the last input is
+        // written with the muted switch, so the speaker surely plays it and names it.
+        #expect(driver.writes == ["standby", "power=on", "mute=true", "source=usb", "mute=false"])
+        #expect(driver.reads - readsBefore <= 5)
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.snapshot?.sourceId == "usb")
+        #expect(controller.snapshot?.onPreviousInput == false)
+        #expect(controller.snapshot?.muted == false)
+        #expect(controller.activity == nil)
+        #expect(controller.notice == nil)
+    }
+
+    @Test func restoredInputCountsOnlyOnceTheSpeakerNamesIt() async {
+        let driver = FakeDriver()
+        driver.hidesInputAfterWake = true
+        driver.unnamedReadsAfterSource = 3
+        let controller = await connected(driver)
+        controller.standby()
+        await settle(controller)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["standby", "power=on", "mute=true", "source=usb", "mute=false"])
+        #expect(controller.snapshot?.onPreviousInput == false)
+        #expect(controller.notice == nil)
+    }
+
+    @Test func restoreTheSpeakerIgnoresStaysMutedAndSaysSo() async {
+        let driver = FakeDriver()
+        driver.hidesInputAfterWake = true
+        driver.unnamedReadsAfterSource = 1000
+        let controller = await connected(driver)
+        controller.standby()
+        await settle(controller)
+        controller.wake()
+        await settle(controller)
+        // Never unmuted on a volume read before the input was confirmed.
+        #expect(driver.writes == ["standby", "power=on", "mute=true", "source=usb"])
+        #expect(controller.snapshot?.muted == true)
+        #expect(controller.notice != nil)
+        #expect(controller.phase == .online)
+    }
+
+    @Test func unnamedInputFoundByPollingIsShownAndWrittenOnlyWhenPicked() async throws {
+        let driver = FakeDriver()
+        driver.hidesInputAfterWake = true
+        let controller = await connected(driver)
+        controller.standby()
+        await settle(controller)
+        // Woken elsewhere: polls only read, and keep naming it so nothing looks like an input changed elsewhere.
+        try await driver.setPower(true)
+        await controller.refresh()
+        await controller.refresh()
+        #expect(controller.snapshot?.sourceId == "usb")
+        #expect(controller.snapshot?.onPreviousInput == true)
+        #expect(driver.writes == ["standby", "power=on"])
+        controller.setVolume(25)
+        await settle(controller)
+        #expect(driver.writes == ["standby", "power=on", "volume=25"])
+        // Picking the input it is shown on writes it.
+        controller.selectSource("usb")
+        await settle(controller)
+        #expect(driver.writes == ["standby", "power=on", "volume=25", "mute=true", "source=usb", "mute=false"])
+        #expect(controller.snapshot?.onPreviousInput == false)
+    }
+
+    @Test func wakeOnAnUnnamedInputWithoutALastInputDoesNotWait() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.hidesInputAfterWake = true
+        let controller = await connected(driver)
+        #expect(controller.lastActiveSource == nil)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["power=on"])
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.snapshot?.sourceId == nil)
+        #expect(controller.notice == nil)
+        #expect(driver.reads <= 3)
+        // Picking an input still works and names it from then on.
+        controller.selectSource("wifi")
+        await settle(controller)
+        #expect(driver.writes == ["power=on", "mute=true", "source=wifi", "mute=false"])
+        #expect(controller.snapshot?.sourceId == "wifi")
+        #expect(controller.lastActiveSource == "wifi")
+    }
+
+    @Test func wakeToAnInputFromAnUnnamedOneSwitchesMuted() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.hidesInputAfterWake = true
+        let controller = await connected(driver)
+        controller.wake(to: "wifi")
+        await settle(controller)
+        #expect(driver.writes == ["power=on", "mute=true", "source=wifi", "mute=false"])
+        #expect(controller.snapshot?.sourceId == "wifi")
+        #expect(controller.notice == nil)
+    }
+
+    @Test func lastInputFromAnEarlierLaunchNamesTheInput() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.source = "wifi"
+        driver.hidesInputAfterWake = true
+        let controller = SpeakerController(sleep: { _ in })
+        let saved = SavedInputs()
+        controller.lastActiveSourceChanged = { saved.values.append($0) }
+        await controller.connect(driver, lastInput: "wifi")
+        #expect(controller.lastActiveSource == "wifi")
+        controller.wake()
+        await settle(controller)
+        #expect(controller.snapshot?.sourceId == "wifi")
+        #expect(saved.values.isEmpty)
+        controller.selectSource("usb")
+        await settle(controller)
+        #expect(controller.snapshot?.sourceId == "usb")
+        #expect(saved.values == ["usb"])
+    }
+
+    @Test func unnamedInputStillWakingCountsAsWaking() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.hidesInputAfterWake = true
+        driver.wakingReadsAfterPower = 1000
+        let controller = await connected(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(controller.snapshot?.power == .standby)
+        #expect(controller.snapshot?.sourceId == nil)
+        #expect(controller.isWaking)
+        driver.wakingReads = 0
+        await controller.refresh()
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.notice == nil)
     }
 
     @Test func powerChangesTolerateTransientReadErrors() async {

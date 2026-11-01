@@ -65,7 +65,10 @@ public class KefW2DriverTests
     // and about 0.4 s before it when turning off.
     [InlineData("usb", "standby", PowerState.Standby, "usb")]
     [InlineData("standby", "powerOn", PowerState.Standby, null)]
+    // Seen on LSX II LT 2.1.86 after waking with "powerOn": the input setting kept reading "powerOn" for minutes
+    // while the speaker reported it was on, until the input changed.
     [InlineData("powerOn", "powerOn", PowerState.On, null)]
+    [InlineData("powerOn", "standby", PowerState.Standby, null)]
     public async Task InputSettingLeadsThePowerStatus(string source, string status, PowerState power, string? input)
     {
         var device = new FakeKefDevice();
@@ -73,7 +76,7 @@ public class KefW2DriverTests
         await driver.ConnectAsync();
         (device.Source, device.Power) = (source, status);
         var s = await driver.ReadAsync();
-        Assert.Equal((power, input), (s.Power, s.SourceId));
+        Assert.Equal((power, input, source == "powerOn"), (s.Power, s.SourceId, s.OnPreviousInput));
     }
 
     [Fact]

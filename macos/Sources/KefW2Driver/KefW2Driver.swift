@@ -129,7 +129,10 @@ public actor KefW2Driver: SpeakerDriver {
             power: second == "standby" ? .standby : powerState,
             sourceId: known ? second : nil,
             volume: level,
-            muted: muted
+            muted: muted,
+            // Woken with `powerOn`, the input setting can keep that value until the input is switched
+            // (seen for minutes on LSX II LT). The speaker wakes on the input it had before standby.
+            onPreviousInput: second == "powerOn"
         )
     }
 

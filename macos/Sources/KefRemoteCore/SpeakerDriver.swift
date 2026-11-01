@@ -73,12 +73,18 @@ public struct SpeakerSnapshot: Sendable, Equatable {
     public var sourceId: String?
     public var volume: Int
     public var muted: Bool
+    /// The device is on, or waking, on the input it had before standby but
+    /// doesn't say which: a KEF W2 speaker woken with `powerOn` keeps reporting
+    /// `powerOn` as its input until the input is switched. The controller names
+    /// it after the last input it saw while on.
+    public var onPreviousInput: Bool
 
-    public init(power: PowerState, sourceId: String?, volume: Int, muted: Bool) {
+    public init(power: PowerState, sourceId: String?, volume: Int, muted: Bool, onPreviousInput: Bool = false) {
         self.power = power
         self.sourceId = sourceId
         self.volume = volume
         self.muted = muted
+        self.onPreviousInput = onPreviousInput
     }
 }
 

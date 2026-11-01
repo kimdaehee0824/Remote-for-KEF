@@ -116,6 +116,9 @@ public sealed class KefW2Driver : HttpDriver, ISpeakerDriver
             Volume = KefW2Protocol.ReadInt(volume.Result),
             Muted = KefW2Protocol.ReadBool(mute.Result),
             Valid = true,
+            // Woken with "powerOn", the input setting can keep that value until the input is switched (seen for
+            // minutes on LSX II LT). The speaker wakes on the input it had before standby.
+            OnPreviousInput = second == "powerOn",
         };
     }
 

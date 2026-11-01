@@ -124,8 +124,14 @@ public sealed class SpeakerController : IDisposable
     /// <summary>Input a running source switch or power-on is heading for.</summary>
     public string? OperationSource { get; private set; }
 
-    /// <summary>The input last seen while the speaker was on. Power-on returns to it.</summary>
+    /// <summary>
+    /// The input last seen while the speaker was on. Power-on returns to it, and it names the input of a speaker
+    /// that woke on it without saying so (<see cref="SpeakerState.OnPreviousInput"/>).
+    /// </summary>
     public string? LastActiveSource { get; private set; }
+
+    /// <summary><see cref="LastActiveSource"/> changed, so the app can keep it for the next launch.</summary>
+    public event Action<string>? LastActiveSourceChanged;
 
     /// <summary>
     /// Raise the volume by briefly writing a higher value first when the driver says the device needs it
@@ -215,7 +221,7 @@ public sealed class SpeakerController : IDisposable
     /// Coming out of standby: the input is back but the power status, about 2 s behind it, still says standby.
     /// Commands wait for the power status; the UI already shows the input.
     /// </summary>
-    public bool IsWaking => IsStandby && State.SourceId != null;
+    public bool IsWaking => IsStandby && (State.SourceId != null || State.OnPreviousInput);
 
     public bool CanPowerOn => IsStandby && !IsWaking && !Busy && Supports(DriverCapabilities.Power);
 
@@ -231,11 +237,15 @@ public sealed class SpeakerController : IDisposable
 
     public bool Supports(DriverCapabilities capability) => Driver != null && Driver.Capabilities.HasFlag(capability);
 
-    /// <summary>Replace the driver, identify the device and read once. Never writes.</summary>
-    public async Task<bool> ConnectAsync(ISpeakerDriver driver)
+    /// <summary>
+    /// Replace the driver, identify the device and read once. Never writes. <paramref name="lastInput"/> is the
+    /// last input this speaker was seen on before, e.g. in an earlier launch.
+    /// </summary>
+    public async Task<bool> ConnectAsync(ISpeakerDriver driver, string? lastInput = null)
     {
         Disconnect(Loc.T("연결 확인 중", "Checking the connection", "接続を確認中"));
         Driver = driver;
+        LastActiveSource = lastInput;
         int token = generation;
         Busy = true;
         Notify();
@@ -449,9 +459,14 @@ public sealed class SpeakerController : IDisposable
     /// Each input can have its own volume, so switching is only done muted:
     /// mute, verify, switch, verify, then unmute only if the new input is not louder and within the limit.
     /// </summary>
-    async Task SwitchSource(SpeakerState before, string sourceId, int token)
+    /// <param name="restoring">
+    /// The input the speaker should already be on is written again after a power-on, so staying muted as before
+    /// needs no notice.
+    /// </param>
+    async Task SwitchSource(SpeakerState before, string sourceId, int token, bool restoring = false)
     {
-        if (before.SourceId == sourceId) return;
+        // An input only shown as the last one (OnPreviousInput) is written anyway, so the speaker is surely on it.
+        if (before.SourceId == sourceId && !before.OnPreviousInput) return;
         if (!Supports(DriverCapabilities.Mute)) throw new SpeakerException(Loc.T("음소거를 지원하지 않는 기기는 안전하게 입력을 전환할 수 없습니다", "Inputs can't be switched safely on a device without mute", "ミュートに対応していない機器では、入力を安全に切り替えられません"));
 
         if (!before.Muted)
@@ -461,12 +476,17 @@ public sealed class SpeakerController : IDisposable
         }
         Check(token);
         await Driver!.SetSourceAsync(sourceId, cts.Token);
-        await Verify(token, s => s.SourceId == sourceId && s.Muted);
+        // Only an input the speaker names counts: one shown as the last input would pass at once. Leaving an
+        // unnamed input may take a while, as power changes do.
+        if (before.OnPreviousInput)
+            await Verify(token, s => s.SourceId == sourceId && s.Muted && !s.OnPreviousInput, PowerVerifyAttempts, PowerVerifyDelayMs, tolerateTransient: true);
+        else
+            await Verify(token, s => s.SourceId == sourceId && s.Muted && !s.OnPreviousInput);
 
         var after = State;
         if (before.Muted)
         {
-            SetNotice(Loc.T("입력을 바꿨습니다. 원래 음소거 상태를 유지합니다", "Input switched. It stays muted as before", "入力を切り替えました。ミュートは元のままです"));
+            if (!restoring) SetNotice(Loc.T("입력을 바꿨습니다. 원래 음소거 상태를 유지합니다", "Input switched. It stays muted as before", "入力を切り替えました。ミュートは元のままです"));
         }
         else if (after.Volume <= before.Volume && after.Volume <= EffectiveLimit)
         {
@@ -537,7 +557,9 @@ public sealed class SpeakerController : IDisposable
                         OperationSource = s.SourceId;
                         Notify();
                     }
-                    return s.Active && s.SourceId != null;
+                    // The power status alone says it is on. The input may stay unnamed for good (OnPreviousInput
+                    // before any input was seen), so it isn't waited for.
+                    return s.Active;
                 }, WakeAttempts, i => i < WakeQuickAttempts ? PowerVerifyDelayMs : WakeSlowDelayMs, tolerateTransient: true);
                 if (!confirmed)
                 {
@@ -569,6 +591,22 @@ public sealed class SpeakerController : IDisposable
                 Check(token);
                 OperationSource = sourceId;
                 await SwitchSource(on, sourceId, token);
+            }
+            else if (on.OnPreviousInput && on.SourceId is { } last && Supports(DriverCapabilities.Source))
+            {
+                // Woken without naming its input: the last input is written with the usual muted switch, so the
+                // speaker is surely on it and says so. Unknown, it is left as it is.
+                Check(token);
+                OperationSource = last;
+                try
+                {
+                    await SwitchSource(on, last, token, restoring: true);
+                }
+                catch (SpeakerException) when (token == generation && State.Valid)
+                {
+                    // The speaker is on and reads fine; polls notice if it went away.
+                    SetNotice(Loc.T("켜졌지만 입력을 다시 지정하지 못했습니다. 음소거된 채일 수 있으니 입력을 직접 고르세요", "Turned on, but the input couldn't be set again and may still be muted. Pick the input yourself", "電源は入りましたが、入力を指定し直せませんでした。ミュートのままの可能性があるので、入力を選んでください"));
+                }
             }
         }
         catch (Exception e) when (token == generation)
@@ -717,9 +755,17 @@ public sealed class SpeakerController : IDisposable
         var s = await Driver!.ReadAsync(cts.Token);
         Check(token);
         if (s.Volume is < 0 or > 100) throw new SpeakerException(Loc.T("음량 응답 범위 오류", "Volume reply out of range", "音量の応答が範囲外です"));
+        // On the input it had before standby without saying which: the last input seen while on, if it is one of
+        // the device's. Every read names it the same way, so it never looks like an input changed elsewhere.
+        if (s.SourceId == null && s.OnPreviousInput && LastActiveSource is { } last && Driver.Sources.Any(x => x.Id == last))
+            s = s with { SourceId = last };
         if (s.SourceId != State.SourceId || s.Power != State.Power) playbackDirty = true;
         State = s with { Valid = true, SeenAt = Clock() };
-        if (State.Active && State.SourceId != null) LastActiveSource = State.SourceId;
+        if (State.Active && State.SourceId is { } source && source != LastActiveSource)
+        {
+            LastActiveSource = source;
+            LastActiveSourceChanged?.Invoke(source);
+        }
         if (State.Active && lateWake is { } wake) FinishLateWake(wake);
         return State;
     }
