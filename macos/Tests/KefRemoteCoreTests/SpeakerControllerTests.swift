@@ -39,7 +39,7 @@ final class FakeDriver: SpeakerDriver {
         if broken { throw FakeError.offline }
         return DeviceInfo(
             name: "Test", model: "Fake", firmware: "1",
-            capabilities: [.volume, .mute, .source, .power],
+            capabilities: DriverCapabilities([.volume, .mute, .source, .power]).union(extraCapabilities),
             sources: [SourceOption(id: "usb", name: "USB"), SourceOption(id: "wifi", name: "Wi-Fi")],
             deviceVolumeLimit: deviceLimit, verifiedModel: true
         )
@@ -91,6 +91,56 @@ final class FakeDriver: SpeakerDriver {
     nonisolated func approachOvershoot(current: Int, target: Int) -> Int? {
         target > current && target < 41 ? target + 2 : nil
     }
+
+    // Playback and change reports (SpeakerControllerChangesTests).
+    var extraCapabilities: DriverCapabilities = []
+    var playing = PlaybackInfo.none
+    var playbackReads = 0
+    var playbackCommands: [PlaybackCommand] = []
+    var rejectPlayback = false
+    /// Reads after a command that still show the old player state.
+    var playbackLagReads = 0
+    private var pendingPlayback: PlaybackInfo?
+    var changeCalls = 0
+    private var changeWaits: [CheckedContinuation<DeviceChanges, any Error>] = []
+    var waitingForChanges: Bool { !changeWaits.isEmpty }
+
+    nonisolated func sourceHasPlayback(_ sourceId: String?) -> Bool { sourceId == "wifi" }
+
+    func readPlayback() async throws -> PlaybackInfo {
+        playbackReads += 1
+        if broken { throw FakeError.offline }
+        if let pending = pendingPlayback {
+            if playbackLagReads > 0 {
+                playbackLagReads -= 1
+            } else {
+                playing = pending
+                pendingPlayback = nil
+            }
+        }
+        return playing
+    }
+
+    func sendPlayback(_ command: PlaybackCommand) async throws {
+        if rejectPlayback { throw FakeError.offline }
+        playbackCommands.append(command)
+        var next = playing
+        switch command {
+        case .togglePause: next.status = playing.status == .playing ? .paused : .playing
+        case .next, .previous:
+            next.title += " (\(command.rawValue))"
+            next.positionMs = 0
+        }
+        if playbackLagReads > 0 { pendingPlayback = next } else { playing = next }
+    }
+
+    func waitForChanges() async throws -> DeviceChanges {
+        changeCalls += 1
+        return try await withCheckedThrowingContinuation { changeWaits.append($0) }
+    }
+
+    func report(_ changes: DeviceChanges) { changeWaits.removeFirst().resume(returning: changes) }
+    func failChanges() { changeWaits.removeFirst().resume(throwing: FakeError.offline) }
 }
 
 enum FakeError: Error { case offline }

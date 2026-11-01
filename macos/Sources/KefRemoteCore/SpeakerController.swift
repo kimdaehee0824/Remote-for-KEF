@@ -13,6 +13,9 @@ import Observation
 /// - One failed status read keeps the last state and is retried a second
 ///   later; the second in a row shows the speaker as offline. Starting or
 ///   waking retries a few times before showing offline.
+/// - Change reports from the device (`SpeakerDriver.waitForChanges`) only
+///   trigger reads. While they arrive, polling slows to a heartbeat; when they
+///   fail, polling takes over at the usual pace.
 @MainActor
 @Observable
 public final class SpeakerController {
@@ -31,6 +34,7 @@ public final class SpeakerController {
         /// Waking, then switching to the input if one was given.
         case powerOn(String?)
         case powerOff
+        case playback(PlaybackCommand)
     }
 
     public private(set) var phase: Phase = .idle
@@ -45,6 +49,22 @@ public final class SpeakerController {
     public private(set) var notice: String?
     /// Last input seen while powered on. Used to wake from standby.
     public private(set) var lastActiveSource: String?
+    /// What the speaker is playing. `.none` while `playbackEnabled` is off.
+    public private(set) var playback: PlaybackInfo = .none
+    /// Change reports are arriving, so polling is only a heartbeat.
+    public private(set) var changesActive = false
+
+    /// Read what is playing. Off: nothing is read and `playback` stays empty.
+    public var playbackEnabled = false {
+        didSet {
+            guard playbackEnabled != oldValue else { return }
+            if playbackEnabled { Task { await refreshPlayback() } } else { setPlayback(.none) }
+        }
+    }
+    /// Listen for change reports when the driver offers them. Off in tests.
+    public var listensForChanges = true
+    /// Seconds since boot, for counting the play position on. Replaceable for tests.
+    @ObservationIgnored public var uptime: () -> Double = { monotonicSeconds() }
 
     /// Clamped to 0...100 where it is used.
     public var appLimit: Int = VolumePolicy.defaultAppLimit
@@ -69,6 +89,22 @@ public final class SpeakerController {
         return deviceLimit < VolumePolicy.clamp(appLimit)
     }
 
+    /// A track to show: playback is on, the speaker is on a streaming input and something is loaded.
+    public var showsPlayback: Bool {
+        guard playbackEnabled, isOnline, let driver, let snapshot, snapshot.power == .on,
+              device?.capabilities.contains(.playback) == true else { return false }
+        return driver.sourceHasPlayback(snapshot.sourceId) && playback.hasTrack
+    }
+
+    /// Position now in milliseconds, counted on from the last read while playing. -1 when unknown.
+    public func playbackPositionMs(at time: Double? = nil) -> Int {
+        let p = playback
+        guard p.positionMs >= 0 else { return -1 }
+        var position = p.positionMs
+        if p.status == .playing { position += Int(max(0, (time ?? uptime()) - playbackReadAt) * 1000) }
+        return p.durationMs > 0 ? min(position, p.durationMs) : position
+    }
+
     private enum Intent: Equatable {
         case volume(Int)
         case volumeStep(Int)
@@ -76,6 +112,7 @@ public final class SpeakerController {
         case source(String)
         case standby
         case wake(String?)
+        case playback(PlaybackCommand)
 
         var isVolume: Bool {
             switch self {
@@ -91,6 +128,7 @@ public final class SpeakerController {
             case let .source(id): .source(id)
             case .standby: .powerOff
             case let .wake(id): .powerOn(id)
+            case let .playback(command): .playback(command)
             }
         }
     }
@@ -126,6 +164,16 @@ public final class SpeakerController {
     @ObservationIgnored private var missedPolls = 0
     @ObservationIgnored private var suspended = false
     @ObservationIgnored private var monitorTask: Task<Void, Never>?
+    @ObservationIgnored private var listenTask: Task<Void, Never>?
+    /// Bumped when the driver is replaced or dropped, so its change reports
+    /// and player reads are no longer applied.
+    @ObservationIgnored private var driverEpoch = 0
+    /// Change reports that arrived while a command ran, looked at once it has finished.
+    @ObservationIgnored private var heldChanges: DeviceChanges?
+    @ObservationIgnored private var playbackReadAt: Double = 0
+    @ObservationIgnored private var playbackReading = false
+    @ObservationIgnored private var playbackAgain = false
+    @ObservationIgnored private var playbackConfirming = false
     /// Internal so tests can wait for queued commands to finish.
     @ObservationIgnored private(set) var drainTask: Task<Void, Never>?
     private let sleep: @Sendable (Duration) async throws -> Void
@@ -154,6 +202,13 @@ public final class SpeakerController {
     let connectAttempts = 4
     /// Delay between those retries.
     let quickRetry: Duration = .seconds(1)
+    /// With change reports the poll is only a heartbeat that notices a speaker that went away.
+    let heartbeatVisible: Duration = .seconds(3)
+    let heartbeatHidden: Duration = .seconds(10)
+    let listenBackoff: [Duration] = [.seconds(2), .seconds(5), .seconds(10), .seconds(30), .seconds(60)]
+    /// A play/pause or skip shows on the player within about 1.5 s.
+    let playbackConfirmAttempts = 6
+    let playbackConfirmDelay: Duration = .milliseconds(300)
 
     public init(sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.sleep = sleep
@@ -163,9 +218,12 @@ public final class SpeakerController {
 
     /// Replaces the driver and connects read-only.
     public func connect(_ driver: any SpeakerDriver) async {
+        stopListening()
+        driverEpoch += 1
         self.driver = driver
         update(\.device, nil)
         update(\.snapshot, nil)
+        setPlayback(.none)
         failures = 0
         missedPolls = 0
         update(\.phase, .connecting)
@@ -174,6 +232,11 @@ public final class SpeakerController {
 
     public func disconnect() {
         invalidate()
+        stopListening()
+        driverEpoch += 1
+        heldChanges = nil
+        playbackConfirming = false
+        setPlayback(.none)
         lateWake = nil
         driver = nil
         update(\.device, nil)
@@ -185,6 +248,7 @@ public final class SpeakerController {
     public func suspend() {
         suspended = true
         invalidate()
+        stopListening()
     }
 
     /// After wake, the state is re-read before anything else happens.
@@ -249,6 +313,8 @@ public final class SpeakerController {
             update(\.phase, .online)
             failures = 0
             missedPolls = 0
+            startListening()
+            Task { await refreshPlayback() }
             return true
         } catch {
             guard token == generation else { return false }
@@ -280,12 +346,20 @@ public final class SpeakerController {
         monitorTask = nil
     }
 
+    /// Pause after a status read that worked. Internal for tests.
+    func healthyPollDelay() -> Duration {
+        if isWaking { return wakingPoll }
+        if changesActive { return isPanelVisible ? heartbeatVisible : heartbeatHidden }
+        return isPanelVisible ? .milliseconds(1500) : .seconds(4)
+    }
+
     private func monitorStep() async -> Duration {
         guard driver != nil, !suspended else { return .seconds(1) }
         if isBusy { return .milliseconds(500) }
         if await refresh() {
-            if isWaking { return wakingPoll }
-            return isPanelVisible ? .milliseconds(1500) : .seconds(4)
+            // Without change reports the player is read with every poll; with them only to correct the position.
+            if playbackEnabled, !isWaking, !changesActive || playback.status == .playing { Task { await refreshPlayback() } }
+            return healthyPollDelay()
         }
         // A tolerated missed poll, or a retry while starting or waking.
         if phase == .online || phase == .connecting { return quickRetry }
@@ -314,6 +388,9 @@ public final class SpeakerController {
     /// Wakes from standby, then switches to `sourceId` (muted, like any input
     /// switch) when it differs from the input the speaker woke up on.
     public func wake(to sourceId: String? = nil) { enqueue(.wake(sourceId)) }
+
+    /// Play/pause, next or previous on the speaker's own player.
+    public func sendPlayback(_ command: PlaybackCommand) { enqueue(.playback(command)) }
 
     public func clearNotice() { notice = nil }
 
@@ -369,6 +446,7 @@ public final class SpeakerController {
             isBusy = false
             activity = nil
             pendingVolume = nil
+            releaseHeldChanges()
         }
         while let job = queued {
             queued = nil
@@ -416,6 +494,8 @@ public final class SpeakerController {
                 }
             case let .wake(target):
                 try await wake(driver, job.token, before, to: target, limit: limit, device: device)
+            case let .playback(command):
+                try await play(driver, job.token, command, device: device)
             }
         } catch is Cancelled {
         } catch let stop as Stop {
@@ -533,6 +613,152 @@ public final class SpeakerController {
         }
     }
 
+    // MARK: Now playing
+
+    private func play(_ driver: any SpeakerDriver, _ token: Int, _ command: PlaybackCommand, device: DeviceInfo) async throws {
+        guard device.capabilities.contains(.playback) else { throw Stop(message: UnsupportedOperation().description) }
+        let shown = playback
+        let shownPosition = playbackPositionMs()
+        try check(token)
+        do {
+            try await driver.sendPlayback(command)
+        } catch {
+            // The player turned the command down, or the request was lost. Either way the
+            // connection is left to the polls; a playback command never drops it.
+            throw Stop(message: loc("스피커가 재생 명령을 받지 않았습니다: \(describe(error))", "The speaker didn't take the playback command: \(describe(error))", "スピーカーが再生コマンドを受け付けませんでした: \(describe(error))"))
+        }
+        try check(token)
+        if command == .togglePause, shown.hasTrack {
+            // Show the new state at once, like the system media controls; the reads below confirm it.
+            var next = shown
+            next.status = shown.status == .playing ? .paused : .playing
+            next.positionMs = shownPosition
+            setPlayback(next)
+        }
+        let epoch = driverEpoch
+        Task { await confirmPlayback(driver, epoch, command, shown: shown, shownPosition: shownPosition) }
+    }
+
+    /// Reads the player until the command shows, without holding up other commands.
+    private func confirmPlayback(_ driver: any SpeakerDriver, _ epoch: Int, _ command: PlaybackCommand, shown: PlaybackInfo, shownPosition: Int) async {
+        playbackConfirming = true
+        var last: PlaybackInfo?
+        for _ in 0..<playbackConfirmAttempts {
+            try? await sleep(playbackConfirmDelay)
+            guard epoch == driverEpoch, let info = try? await driver.readPlayback(), epoch == driverEpoch else { break }
+            last = info
+            let done = switch command {
+            case .togglePause: info.status != shown.status
+            case .next, .previous:
+                info.title != shown.title || info.artist != shown.artist
+                    || (info.positionMs >= 0 && shownPosition >= 0 && info.positionMs + 1500 < shownPosition)
+            }
+            if done { break }
+        }
+        guard epoch == driverEpoch else { return }
+        playbackConfirming = false
+        if let last, playbackEnabled { setPlayback(last) }
+        if playbackAgain { await refreshPlayback() }
+    }
+
+    /// Reads what is playing. Read-only; a failure keeps what is shown and is left to the polls.
+    public func refreshPlayback() async {
+        guard playbackEnabled, let driver, isOnline, device?.capabilities.contains(.playback) == true else { return }
+        guard let snapshot, snapshot.power == .on, driver.sourceHasPlayback(snapshot.sourceId) else {
+            setPlayback(.none)
+            return
+        }
+        if playbackReading || playbackConfirming {
+            playbackAgain = true
+            return
+        }
+        playbackReading = true
+        defer { playbackReading = false }
+        let epoch = driverEpoch
+        repeat {
+            playbackAgain = false
+            guard let info = try? await driver.readPlayback(), epoch == driverEpoch, playbackEnabled else { return }
+            setPlayback(info)
+        } while playbackAgain && !playbackConfirming
+    }
+
+    private func setPlayback(_ info: PlaybackInfo) {
+        update(\.playback, info)
+        playbackReadAt = uptime()
+    }
+
+    // MARK: Change reports
+
+    private func startListening() {
+        stopListening()
+        guard listensForChanges, let driver, device?.capabilities.contains(.changes) == true else { return }
+        let epoch = driverEpoch
+        listenTask = Task { [weak self] in await self?.listen(driver, epoch) }
+    }
+
+    private func stopListening() {
+        listenTask?.cancel()
+        listenTask = nil
+        update(\.changesActive, false)
+    }
+
+    /// Waits for change reports while online. Going offline, sleeping or a new
+    /// driver cancels it; it starts again once the speaker is back.
+    private func listen(_ driver: any SpeakerDriver, _ epoch: Int) async {
+        var failed = 0
+        while !Task.isCancelled, epoch == driverEpoch {
+            let started = uptime()
+            do {
+                let changes = try await driver.waitForChanges()
+                guard !Task.isCancelled, epoch == driverEpoch else { return }
+                failed = 0
+                update(\.changesActive, true)
+                await applyChanges(changes)
+                // A device that answers at once with nothing would otherwise be asked again in a tight loop.
+                if !changes.any, uptime() - started < 1 { try await sleep(.seconds(1)) }
+            } catch {
+                guard !Task.isCancelled, epoch == driverEpoch else { return }
+                failed += 1
+                update(\.changesActive, false)
+                // Find out at once whether the speaker is gone or only its change reports stopped.
+                await refresh()
+                do { try await sleep(listenBackoff[min(failed, listenBackoff.count) - 1]) } catch { return }
+            }
+        }
+    }
+
+    /// Reads only when the report says something the state doesn't show yet,
+    /// so the echo of the app's own verified write costs nothing.
+    private func applyChanges(_ changes: DeviceChanges) async {
+        var changes = changes
+        guard driver != nil, isOnline else { return }
+        if isBusy {
+            heldChanges = heldChanges?.merged(with: changes) ?? changes
+            return
+        }
+        if changes.device {
+            await refreshDevice()
+            changes.device = false
+        }
+        let needsRead = changes.state || snapshot == nil
+            || changes.volume.map { $0 != snapshot?.volume } == true
+            || changes.muted.map { $0 != snapshot?.muted } == true
+        if needsRead {
+            if isBusy {
+                heldChanges = heldChanges?.merged(with: changes) ?? changes
+                return
+            }
+            await refresh()
+        }
+        if changes.playback { await refreshPlayback() }
+    }
+
+    private func releaseHeldChanges() {
+        guard let held = heldChanges else { return }
+        heldChanges = nil
+        Task { await applyChanges(held) }
+    }
+
     // MARK: Helpers
 
     private func read(_ driver: any SpeakerDriver, _ token: Int) async throws -> SpeakerSnapshot {
@@ -571,7 +797,11 @@ public final class SpeakerController {
     }
 
     private func apply(_ state: SpeakerSnapshot) {
+        let previous = snapshot
         update(\.snapshot, state)
+        if playbackEnabled, previous?.sourceId != state.sourceId || previous?.power != state.power {
+            Task { await refreshPlayback() }
+        }
         if state.power == .on, let source = state.sourceId { update(\.lastActiveSource, source) }
         if state.power == .on, let wake = lateWake { finishLateWake(wake, state) }
     }
@@ -604,6 +834,7 @@ public final class SpeakerController {
 
     private func goOffline(_ message: String) {
         invalidate()
+        stopListening()
         failures = max(failures, 1)
         update(\.phase, .offline(message))
     }
@@ -612,6 +843,14 @@ public final class SpeakerController {
         if let error = error as? any CustomStringConvertible { return error.description }
         return String(describing: error)
     }
+}
+
+private let clockOrigin = ContinuousClock.now
+
+/// Seconds on a monotonic clock, for counting the play position on.
+func monotonicSeconds() -> Double {
+    let elapsed = (ContinuousClock.now - clockOrigin).components
+    return Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
 }
 
 public struct VerificationError: Error, CustomStringConvertible {

@@ -41,6 +41,15 @@ public enum KefAuthMode: String, Sendable {
 /// Abstracts HTTP so the protocol can be tested against a fake device.
 public protocol KefTransport: Sendable {
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
+    /// A request the device holds open for up to `hold` seconds (a long poll).
+    /// Must not be cut off before `request.timeoutInterval`.
+    func sendHeld(_ request: URLRequest, hold: TimeInterval) async throws -> (Data, HTTPURLResponse)
+}
+
+extension KefTransport {
+    public func sendHeld(_ request: URLRequest, hold: TimeInterval) async throws -> (Data, HTTPURLResponse) {
+        try await send(request)
+    }
 }
 
 /// Talks to the local `/api/getData` and `/api/setData` endpoints.
@@ -55,6 +64,8 @@ struct KefW2Client: Sendable {
     /// slowly while it streams; one failed status read is retried by the
     /// controller before it shows the speaker as offline.
     static let requestTimeout: TimeInterval = 2.5
+    /// Added to a long poll's hold time before the request counts as failed.
+    static let holdMargin: TimeInterval = 3
 
     init(host: String, password: String, transport: any KefTransport, now: @escaping @Sendable () -> Date = { Date() }) throws {
         guard let normalized = Self.validatedHost(host) else { throw KefError.invalidHost }
@@ -95,6 +106,27 @@ struct KefW2Client: Sendable {
     }
 
     var setURL: String { "http://\(host)/api/setData" }
+    var modifyQueueURL: String { "http://\(host)/api/event/modifyQueue" }
+
+    func pollQueueURL(_ queueId: String, hold: Int) -> String {
+        let escaped = queueId.addingPercentEncoding(withAllowedCharacters: Self.pathAllowed) ?? queueId
+        return "http://\(host)/api/event/pollQueue?queueId=\(escaped)&timeout=\(hold)"
+    }
+
+    /// Subscribes to `paths` and returns the queue id. The event endpoints are
+    /// not signed in any auth mode (measured on LSX II LT 2.1.86 in setData mode).
+    func subscribe(_ paths: [String]) async throws -> String {
+        let reply = try await send(method: "POST", url: modifyQueueURL, body: KefPlayback.modifyQueueBody(paths), authorization: nil)
+        guard case let .string(id)? = reply, !id.isEmpty else {
+            throw KefError.invalidResponse(loc("이벤트 구독 응답 형식 오류", "unexpected event subscription reply", "イベント購読の応答の形式が正しくありません"))
+        }
+        return id
+    }
+
+    /// Waits up to `hold` seconds for events on the queue.
+    func poll(_ queueId: String, hold: Int) async throws -> JSONValue {
+        try await send(method: "GET", url: pollQueueURL(queueId, hold: hold), body: nil, authorization: nil, hold: TimeInterval(hold)) ?? .array([])
+    }
 
     func get(_ path: String, secure: Bool) async throws -> JSONValue {
         let url = getURL(path)
@@ -110,17 +142,17 @@ struct KefW2Client: Sendable {
         return json
     }
 
-    func set(_ path: String, _ value: KefJSON.Typed, auth: KefAuthMode) async throws {
+    func set(_ path: String, _ value: KefJSON.Typed, auth: KefAuthMode, role: String = "value") async throws {
         let body: String
         var authorization: String?
         switch auth {
         case .none:
-            body = KefJSON.plainBody(path: path, value: value)
+            body = KefJSON.plainBody(path: path, value: value, role: role)
         case .setData, .all:
             let salt = KefCrypto.randomBytes(6)
             let key = KefCrypto.key(salt: salt, password: password)
             let encrypted = try KefCrypto.encrypt(value.json, key: key, iv: KefCrypto.randomBytes(16))
-            body = KefJSON.encryptedBody(path: path, encryptedValue: encrypted)
+            body = KefJSON.encryptedBody(path: path, encryptedValue: encrypted, role: role)
             authorization = KefCrypto.authorization(url: setURL, body: body, salt: salt, key: key, timestamp: timestamp())
         }
         _ = try await send(method: "POST", url: setURL, body: body, authorization: authorization)
@@ -130,11 +162,13 @@ struct KefW2Client: Sendable {
         Int64((now().timeIntervalSince1970 * 1000).rounded(.down))
     }
 
-    private func send(method: String, url: String, body: String?, authorization: String?) async throws -> JSONValue? {
+    /// `hold`: the device may keep the request open that many seconds (long poll).
+    /// Such a reply may be empty.
+    private func send(method: String, url: String, body: String?, authorization: String?, hold: TimeInterval? = nil) async throws -> JSONValue? {
         guard let target = URL(string: url) else { throw KefError.invalidHost }
         var request = URLRequest(url: target)
         request.httpMethod = method
-        request.timeoutInterval = KefW2Client.requestTimeout
+        request.timeoutInterval = hold.map { $0 + KefW2Client.holdMargin } ?? KefW2Client.requestTimeout
         if let body {
             request.httpBody = Data(body.utf8)
             request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
@@ -143,7 +177,11 @@ struct KefW2Client: Sendable {
 
         let (data, response): (Data, HTTPURLResponse)
         do {
-            (data, response) = try await transport.send(request)
+            if let hold {
+                (data, response) = try await transport.sendHeld(request, hold: hold)
+            } else {
+                (data, response) = try await transport.send(request)
+            }
         } catch let error as KefError {
             throw error
         } catch is CancellationError {
@@ -158,7 +196,7 @@ struct KefW2Client: Sendable {
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("<") { throw KefError.loginPage }
         if text.isEmpty {
-            if method == "GET" { throw KefError.invalidResponse(loc("빈 응답", "empty response", "空の応答")) }
+            if method == "GET", hold == nil { throw KefError.invalidResponse(loc("빈 응답", "empty response", "空の応答")) }
             return nil
         }
         let json = try KefJSON.decode(Data(text.utf8))
@@ -182,6 +220,8 @@ struct KefW2Client: Sendable {
 /// URLSession transport: no proxy, no redirects, no cache or cookies.
 public final class URLSessionKefTransport: NSObject, KefTransport, URLSessionTaskDelegate, @unchecked Sendable {
     private let session: URLSession
+    /// Long polls: the regular session gives up on any request after 5 s.
+    private let heldSession: URLSession
 
     public override init() {
         let configuration = URLSessionConfiguration.ephemeral
@@ -195,10 +235,24 @@ public final class URLSessionKefTransport: NSObject, KefTransport, URLSessionTas
         // later ones wait in line, and the wait counts toward their timeout.
         configuration.httpMaximumConnectionsPerHost = 4
         session = URLSession(configuration: configuration)
+        let held = configuration.copy() as! URLSessionConfiguration
+        held.timeoutIntervalForRequest = 60
+        held.timeoutIntervalForResource = 60
+        held.httpMaximumConnectionsPerHost = 1
+        heldSession = URLSession(configuration: held)
         super.init()
     }
 
-    deinit { session.invalidateAndCancel() }
+    deinit {
+        session.invalidateAndCancel()
+        heldSession.invalidateAndCancel()
+    }
+
+    public func sendHeld(_ request: URLRequest, hold: TimeInterval) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await heldSession.data(for: request, delegate: self)
+        guard let http = response as? HTTPURLResponse else { throw KefError.invalidResponse(loc("HTTP 응답이 아닙니다", "not an HTTP response", "HTTPの応答ではありません")) }
+        return (data, http)
+    }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request, delegate: self)

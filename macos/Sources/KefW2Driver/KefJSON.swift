@@ -81,22 +81,27 @@ enum KefJSON {
         case int(Int)
         case bool(Bool)
         case physicalSource(String)
+        /// An untyped object for action paths, e.g. {"control":"pause"}.
+        case object(String)
 
         var json: String {
             switch self {
             case let .int(n): #"{"type":"i32_","i32_":\#(n)}"#
             case let .bool(b): #"{"type":"bool_","bool_":\#(b)}"#
             case let .physicalSource(s): #"{"type":"kefPhysicalSource","kefPhysicalSource":\#(quote(s))}"#
+            case let .object(json): json
             }
         }
     }
 
-    static func plainBody(path: String, value: Typed) -> String {
-        #"{"path":\#(quote(path)),"role":"value","value":\#(value.json)}"#
+    /// `role` is `value` for settings and `activate` for action paths such as
+    /// `player:player/control`.
+    static func plainBody(path: String, value: Typed, role: String = "value") -> String {
+        #"{"path":\#(quote(path)),"role":\#(quote(role)),"value":\#(value.json)}"#
     }
 
-    static func encryptedBody(path: String, encryptedValue: String) -> String {
-        #"{"path":\#(quote(path)),"role":"value","value":\#(quote(encryptedValue))}"#
+    static func encryptedBody(path: String, encryptedValue: String, role: String = "value") -> String {
+        #"{"path":\#(quote(path)),"role":\#(quote(role)),"value":\#(quote(encryptedValue))}"#
     }
 
     static func quote(_ text: String) -> String {

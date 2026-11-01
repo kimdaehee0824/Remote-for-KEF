@@ -23,15 +23,47 @@ actor FakeKefDevice: KefTransport {
     ]
     let password: String
     var posts: [(path: String, plain: String)] = []
+    var roles: [String] = []
     var rejectedSignatures = 0
     var getURLs: [String] = []
+    /// Event queue: replies to pollQueue in order, then [] (the hold expired).
+    var events: [String] = []
+    var subscriptions: [String] = []
+    var queuesCreated = 0
+    var queueBroken = false
+    var signedEventRequests = 0
+    var heldRequests = 0
+    private var queueId: String?
 
     init(password: String = "") { self.password = password }
 
     func set(_ path: String, _ json: String) { values[path] = json }
+    func queue(_ json: String) { events.append(json) }
+    func breakQueue(_ broken: Bool) { queueBroken = broken }
+
+    func sendHeld(_ request: URLRequest, hold: TimeInterval) async throws -> (Data, HTTPURLResponse) {
+        heldRequests += 1
+        return try await send(request)
+    }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let url = request.url!.absoluteString
+        if url.contains("/api/event/") {
+            if request.value(forHTTPHeaderField: "Authorization") != nil { signedEventRequests += 1 }
+            if url.hasSuffix("/api/event/modifyQueue") {
+                guard case let .object(fields) = try KefJSON.decode(request.httpBody ?? Data()),
+                      case let .array(items)? = fields["subscribe"] else { return respond(url, 400, "") }
+                for case let .object(item) in items {
+                    if case let .string(path)? = item["path"] { subscriptions.append(path) }
+                }
+                queuesCreated += 1
+                queueId = "{caa6b0ae-4a71-4647-8bf7-c2036842e97\(queuesCreated)}"
+                return respond(url, 200, "\"\(queueId!)\"")
+            }
+            let id = URLComponents(string: url)!.queryItems!.first { $0.name == "queueId" }?.value
+            guard !queueBroken, id == queueId else { return respond(url, 500, "") }
+            return respond(url, 200, events.isEmpty ? "[]" : events.removeFirst())
+        }
         if request.httpMethod == "GET" {
             getURLs.append(url)
             let components = URLComponents(string: url)!
@@ -59,6 +91,7 @@ actor FakeKefDevice: KefTransport {
         else { return respond(url, 400, "") }
         let plain = try KefCrypto.decrypt(encrypted, key: key)
         posts.append((path, plain))
+        if case let .string(role)? = fields["role"] { roles.append(role) }
         values[path] = "[\(plain)]"
         return respond(url, 200, "")
     }

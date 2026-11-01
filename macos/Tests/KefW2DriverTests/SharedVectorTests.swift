@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import KefRemoteCore
 @testable import KefW2Driver
 
 /// Runs the language-neutral vectors in spec/test-vectors/kef-w2.json, which
@@ -88,6 +89,63 @@ struct SharedVectorTests {
                 let parsed = value.flatMap { try? KefJSON.string($0) }
                 #expect(parsed == (shouldFail ? nil : item["expect"] as? String), "\(text)")
             }
+        }
+    }
+
+    @Test(.enabled(if: available)) func playerControl() throws {
+        for item in cases("playerControl") {
+            let salt = hex(item["saltHex"])
+            let key = KefCrypto.key(salt: salt, password: item["password"] as! String)
+            let command = PlaybackCommand(rawValue: item["command"] as! String)!
+            #expect(KefPlayback.controlValue(command) == item["value"] as! String)
+            let encrypted = try KefCrypto.encrypt(KefPlayback.controlValue(command), key: key, iv: hex(item["ivHex"]))
+            let body = KefJSON.encryptedBody(path: KefPlayback.controlPath, encryptedValue: encrypted, role: "activate")
+            #expect(body == item["body"] as! String)
+            let client = try KefW2Client(host: item["host"] as! String, password: "", transport: FakeKefDevice())
+            let header = KefCrypto.authorization(
+                url: client.setURL, body: body, salt: salt, key: key,
+                timestamp: (item["timestampMs"] as! NSNumber).int64Value
+            )
+            #expect(header == item["header"] as! String)
+        }
+    }
+
+    @Test(.enabled(if: available)) func playback() throws {
+        for item in cases("playback") {
+            let what = item["description"] as! String
+            let data = try KefJSON.decode(Data((item["data"] as! String).utf8))
+            let time = try (item["playTime"] as? String).map { try KefJSON.decode(Data($0.utf8)) }
+            let p = try KefPlayback.parse(data, playTime: time)
+            let e = item["expect"] as! [String: Any]
+            #expect(p.status.rawValue == e["status"] as! String, "\(what)")
+            #expect(p.title == e["title"] as! String && p.artist == e["artist"] as! String && p.album == e["album"] as! String, "\(what)")
+            #expect(p.artworkURL == e["artworkUrl"] as? String, "\(what)")
+            #expect(p.service == e["service"] as? String, "\(what)")
+            #expect(p.durationMs == (e["durationMs"] as! NSNumber).intValue && p.positionMs == (e["positionMs"] as! NSNumber).intValue, "\(what)")
+            #expect(p.canTogglePause == e["canTogglePause"] as! Bool && p.canNext == e["canNext"] as! Bool && p.canPrevious == e["canPrevious"] as! Bool, "\(what)")
+        }
+    }
+
+    @Test(.enabled(if: available)) func events() throws {
+        for item in cases("events") {
+            let what = item["description"] as! String
+            let parse = {
+                try KefPlayback.changes(
+                    KefJSON.decode(Data((item["json"] as! String).utf8)),
+                    volumePath: "player:volume", mutePath: "settings:/mediaPlayer/mute",
+                    statePaths: KefW2Driver.statePaths, devicePaths: KefW2Driver.devicePaths
+                )
+            }
+            if item["error"] as? Bool == true {
+                #expect(throws: KefError.self, "\(what)") { try parse() }
+                continue
+            }
+            let e = item["expect"] as! [String: Any]
+            let expected = DeviceChanges(
+                volume: (e["volume"] as? NSNumber)?.intValue, muted: e["muted"] as? Bool,
+                state: e["state"] as? Bool ?? false, device: e["device"] as? Bool ?? false, playback: e["playback"] as? Bool ?? false
+            )
+            #expect(try parse() == expected, "\(what)")
         }
     }
 

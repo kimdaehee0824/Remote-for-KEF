@@ -16,9 +16,17 @@ public actor KefW2Driver: SpeakerDriver {
         static let maximumVolume = "settings:/kef/host/maximumVolume"
     }
 
+    /// Seconds the speaker may hold a pollQueue request open waiting for a change.
+    public static let changeHoldSeconds = 10
+    static let statePaths: Set<String> = [Path.source, Path.speakerStatus]
+    static let devicePaths: Set<String> = [Path.maximumVolume, Path.volumeLimit, Path.deviceName]
+    static let subscriptions = [Path.source, Path.speakerStatus, Path.volume, Path.mute, KefPlayback.dataPath,
+                                Path.maximumVolume, Path.volumeLimit, Path.deviceName]
+
     private let client: KefW2Client
     private var authMode: KefAuthMode?
     private var profile: KefModelProfile?
+    private var queueId: String?
 
     public nonisolated var host: String { client.host }
 
@@ -69,7 +77,9 @@ public actor KefW2Driver: SpeakerDriver {
             name: name,
             model: profile.displayName,
             firmware: firmware,
-            capabilities: profile.sourceIds.count > 1 ? [.volume, .mute, .source, .power] : [.volume, .mute, .power],
+            capabilities: profile.sourceIds.count > 1
+                ? [.volume, .mute, .source, .power, .playback, .changes]
+                : [.volume, .mute, .power, .playback, .changes],
             sources: profile.sources,
             deviceVolumeLimit: deviceLimit,
             verifiedModel: profile.verified
@@ -149,8 +159,49 @@ public actor KefW2Driver: SpeakerDriver {
         target > current ? KefVolumeCurve.overshoot(for: target) : nil
     }
 
-    private func write(_ path: String, _ value: KefJSON.Typed) async throws {
+    /// Streaming inputs carry track information. Physical inputs only report their own name.
+    public nonisolated func sourceHasPlayback(_ sourceId: String?) -> Bool {
+        sourceId == "wifi" || sourceId == "bluetooth"
+    }
+
+    public func readPlayback() async throws -> PlaybackInfo {
+        guard let authMode else { throw KefError.invalidResponse(loc("기기 확인 전", "device not identified yet", "機器の確認前です")) }
+        let secure = authMode == .all
+        let client = client
+        async let data = client.get(KefPlayback.dataPath, secure: secure)
+        // The position is optional: without it the player just shows no progress.
+        async let time = try? client.get(KefPlayback.timePath, secure: secure)
+        return try await KefPlayback.parse(data, playTime: time)
+    }
+
+    public func sendPlayback(_ command: PlaybackCommand) async throws {
+        try await write(KefPlayback.controlPath, .object(KefPlayback.controlValue(command)), role: "activate")
+    }
+
+    /// Long-polls the speaker's event queue, subscribing first if needed. Any
+    /// failure drops the queue so the next call subscribes again.
+    public func waitForChanges() async throws -> DeviceChanges {
+        do {
+            let id: String
+            if let queueId {
+                id = queueId
+            } else {
+                id = try await client.subscribe(Self.subscriptions)
+                queueId = id
+            }
+            let reply = try await client.poll(id, hold: Self.changeHoldSeconds)
+            return try KefPlayback.changes(
+                reply, volumePath: Path.volume, mutePath: Path.mute,
+                statePaths: Self.statePaths, devicePaths: Self.devicePaths
+            )
+        } catch {
+            queueId = nil
+            throw error
+        }
+    }
+
+    private func write(_ path: String, _ value: KefJSON.Typed, role: String = "value") async throws {
         guard let authMode else { throw KefError.unsupportedAuthMode("unknown") }
-        try await client.set(path, value, auth: authMode)
+        try await client.set(path, value, auth: authMode, role: role)
     }
 }
