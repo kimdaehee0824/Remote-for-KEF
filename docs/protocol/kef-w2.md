@@ -66,7 +66,7 @@ With `authMode` `none` this body is posted as is. With `setData` or `all` the va
 
 1. `salt` = 6 random bytes, `saltB64 = Base64(salt)`.
 2. `key = SHA256(salt || UTF8(password))`. The password is the speaker's web page password, not the KEF account password. Empty is a valid value but must not be assumed.
-3. Serialize the typed value object as compact JSON (no whitespace).
+3. Serialize the typed value object as compact JSON (no whitespace). The body that carries the envelope keeps `+` and `/` as they are, not escaped as `\u002B`.
 4. `iv` = 16 random bytes. AES-256-CBC with PKCS#7 padding.
 5. `envelope = Base64(iv || ciphertext)`.
 6. Body actually sent: `{"path":"...","role":"value","value":"<envelope>"}` (compact JSON, keys in that order).
@@ -91,10 +91,48 @@ If `authMode` cannot be read, or the device answers 401/403, an HTML page, or an
 - With `settings:/kef/host/wakeUpSource` at `wakeup_default` the speaker woke on the input it had before standby.
 - Waking can take much longer than those 2 s: the speaker was seen coming on only after the apps had stopped waiting (about 10 s on Windows, 6 s on macOS). The apps now read every 0.5 s for the first 5 s, then every second, for about 30 s. A speaker that reads fine but is not on by then is reported as still turning on, not as a failure, and the message goes as soon as a later read finds it on.
 
+## Change reports (event queue)
+
+Observed on LSX II LT 2.1.86, and used the same way by EvotecIT/homeassistant-kef. These endpoints are never signed, in any `authMode`.
+
+1. Subscribe: `POST /api/event/modifyQueue` with
+   ```json
+   {"subscribe":[{"path":"player:volume","type":"itemWithValue"},{"path":"settings:/mediaPlayer/mute","type":"itemWithValue"}],"unsubscribe":[]}
+   ```
+   The reply is a JSON string holding the queue id, braces included: `"{2b6f…}"`.
+2. Wait: `GET /api/event/pollQueue?queueId=%7B2b6f…%7D&timeout=10`. The speaker holds the request for up to `timeout` seconds and answers as soon as something changes, so the client's own timeout must be longer (the apps allow 3 s more). The reply is an array, empty when nothing changed:
+   ```json
+   [{"path":"player:volume","itemType":"update","itemValue":{"type":"i32_","i32_":31},"rowsEvents":[]}]
+   ```
+3. Ask again with the same id. After any error (timeout, HTTP error, a reply that isn't an array) the id is dropped and step 1 starts over.
+
+The apps subscribe to input, power, volume, mute, `player:player/data`, the two device limit settings and the device name. `player:player/data/playTime` is left out: while a track plays it changes about every 650 ms.
+
+A report only tells the apps to read. Volume and mute values are compared with what the app already shows, so the echo of the app's own verified write costs nothing; anything else is read again with the normal consistent read. Reports that arrive while a command runs are kept and looked at after it. While reports arrive, the regular reads slow to a heartbeat (3 s with the flyout or panel open, 10 s otherwise). When the queue fails, the apps read at once, go back to regular reads and try to subscribe again after 2, 5, 10, 30 and then every 60 s.
+
+## Now playing (observed on LSX II LT with Spotify Connect)
+
+| Purpose | path | type / values |
+|---|---|---|
+| Player state | `player:player/data` | untyped object in a one-element array, see below |
+| Position | `player:player/data/playTime` | `i64_`, milliseconds; `-1` when there is none |
+| Control | `player:player/control` | write with role `activate` |
+
+Fields of `player:player/data` the apps use: `state` (`playing`, `paused`, `stopped`), `trackRoles.title`, `trackRoles.icon` (cover URL), `trackRoles.mediaData.metaData.artist` / `albumArtist` / `album` / `serviceID` (e.g. `spotify`, `airplay`, `googlecast`), `status.duration` (milliseconds), and `controls.pause`, `controls.next_`, `controls.previous` (whether the service allows them).
+
+Physical inputs report their own name as the title (`"usb"`) and no controls, so the apps show playback only on `wifi` and `bluetooth`.
+
+Control is a normal `setData` with role `activate` instead of `value`, encrypted and signed like any write in `setData` mode:
+
+```json
+{"path":"player:player/control","role":"activate","value":{"control":"pause"}}
+```
+
+`pause` toggles between play and pause; `next` and `previous` skip. A bare `{"control":"play"}` must not be sent: on Spotify Connect it ends the session instead of resuming.
+
 ## Not used
 
 - The separate account channel on port 4430 (see hilli/go-kef-w2 `auth.go`).
-- The event queue (`/api/event/pollQueue`). Not tested; polling is used instead.
 
 ## Used, not yet tested on hardware
 

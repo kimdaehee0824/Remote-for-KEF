@@ -17,7 +17,8 @@
 
 - Power, inputs and volume in steps of 1
 - A volume limit, and accurate volume so the same number always sounds the same
-- Shortcuts and an on-screen volume display on Windows
+- Shortcuts and an on-screen volume display
+- What is playing, with playback buttons
 - Updates itself on both systems
 
 How each screen and feature works is in the [User guide](docs/guide.md).

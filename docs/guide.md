@@ -26,6 +26,8 @@ A walk through each screen of Remote for KEF. The numbers in each picture match 
 
 Connecting only reads the speaker's status. It never changes the volume or the input.
 
+Changes made with the remote, KEF Connect or another app show in a moment: the app asks the speaker to report what changes instead of only checking it every few seconds.
+
 ## Windows
 
 ### Flyout
@@ -60,6 +62,15 @@ Before turning on, the app checks that the volume is within the limit. If the vo
 
 1. While muted, the button's speaker has an ×. Press it again to unmute.
 
+### What's playing
+
+When the speaker plays over Wi-Fi or Bluetooth (Spotify Connect, AirPlay, Chromecast and so on), a card with the track shows above the flyout, where Windows 11 puts the media controls above Quick Settings.
+
+- The service, the title and artist, and the cover.
+- **Previous**, **Play/Pause** and **Next** control the speaker's own player. A button the service doesn't allow is dimmed.
+- It shows only with the flyout and never takes focus, so clicking it leaves the flyout open.
+- Turn it off with **Show what's playing** in **Settings → General**.
+
 ### Shortcuts and the volume indicator
 
 From any app, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> mutes or unmutes. When the volume changes, an indicator shows briefly in the bottom-right corner of the monitor with the mouse pointer.
@@ -81,6 +92,8 @@ If another app uses the same combination, **Check shortcuts** shows at the botto
 3. **Keep the icon visible**: Windows 11 hides new icons under the ^. Select **Open taskbar settings** and turn on Remote for KEF to reach it in one click.
 
 **Updates**, further down the same page: with **Update automatically** on, the app checks GitHub once a day, downloads a new version and applies it the next time it starts. **Check for updates** checks right away, and **Restart to update** applies a downloaded version at once.
+
+**Show what's playing**, under **Flyout** on the same page: turns the card above the flyout on or off.
 
 ### Settings: Speaker
 
@@ -156,15 +169,25 @@ When the connection is lost, the icon changes shape once more.
 
 1. While muted, the speaker icon is crossed out. Click it again to unmute.
 
+### What's playing
+
+When the speaker plays over Wi-Fi or Bluetooth, a tile with the track shows above the volume in the panel, like Now Playing in Control Center: the cover, the title and artist, and **Previous**, **Play/Pause** and **Next**. When the speaker knows the track's length, the elapsed and remaining time show under it. Turn it off with **Show what's playing** in **Settings → General**.
+
+### Shortcuts and the volume indicator
+
+From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>M</kbd> mutes or unmutes. Holding the key keeps changing the volume. The volume indicator shows briefly at the top right of the screen, under the menu bar. The shortcuts don't need Accessibility access. As with the Mac's own volume keys, volume up while muted unmutes.
+
 ### Settings: General
 
 <p><img src="images/guide/M5-en.png" width="548" alt="General tab in Settings"></p>
 
-1. **Tabs**: General, Speaker and Volume
+1. **Tabs**: General, Speaker, Volume and Shortcuts
 2. **Open at login**: may need approval in System Settings the first time.
 3. **Show the volume in the menu bar**: on by default. Off leaves only the icon.
 
 **Updates**, on the same tab: with **Check for updates automatically** on, the app checks once a day, and with **Download and install automatically** on as well, it installs when the app quits. **Check Now…** checks right away. An update found while the app sits in the menu bar shows as a line in the panel until you choose **Install…**.
+
+**Show what's playing**, under **Panel** on the same tab: turns the tile above the volume on or off.
 
 ### Settings: Speaker
 
@@ -186,6 +209,13 @@ When the connection is lost, the icon changes shape once more.
 2. **KEF device maximum**
 3. **Limit in effect**
 4. **Accurate volume**: the ⓘ next to it shows a short explanation.
+
+### Settings: Shortcuts
+
+- **Volume up**, **Volume down**, **Mute on/off**: click the box and press the new combination. <kbd>esc</kbd> cancels, <kbd>delete</kbd> turns it off. Except for function keys (F1 to F20), a combination needs <kbd>⌃</kbd>, <kbd>⌥</kbd> or <kbd>⌘</kbd>.
+- **Restore Defaults**: puts the three shortcuts back to their original combinations.
+- **Volume per press**: 1, 2, 3 or 5, or **Perceived loudness**, as on Windows.
+- **Show the volume on screen**: connection problems and the limit still show when this is off.
 
 ## Volume limit and accurate volume
 
@@ -217,6 +247,7 @@ The speaker at the top of the flyout and the panel takes the shape of your model
 
 - **Can't connect**: check the speaker's power and Wi-Fi. The PC or Mac has to be on the same network as the speaker, and the speaker's IP address may have changed. On macOS, check that Remote for KEF is on in **System Settings → Privacy & Security → Local Network**. The app keeps retrying while the connection is lost.
 - **Windows blocks the app**: with Smart App Control on, unsigned apps are blocked with no **Run anyway** button. It can't make an exception for one app, so the app only runs with Smart App Control off. Read [Microsoft's page](https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003) before turning it off.
-- **A shortcut does nothing**: another app may use the same combination. Pick another one in **Settings → Shortcuts**.
+- **A shortcut does nothing**: another app may use the same combination. Pick another one in **Settings → Shortcuts**. On macOS, a combination the system itself uses, such as one for Mission Control, may never reach the app even when it shows as set.
+- **Nothing shows what's playing**: the card and the tile show only on the Wi-Fi and Bluetooth inputs, while a track is playing or paused, and with **Show what's playing** on. Wired inputs such as USB and optical carry no track information.
 - **The app can't turn the speaker on**: the app says so for devices that can't be turned on over the network. Use the remote or KEF Connect.
 - **Anything else**: on Windows, logs are in **About → Settings and log folder** in Settings. Let me know in [Issues](https://github.com/kimdaehee0824/Remote-for-KEF/issues).
