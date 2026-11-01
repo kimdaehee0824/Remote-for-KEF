@@ -16,7 +16,7 @@ A walk through each screen of Remote for KEF. The numbers in each picture match 
 ### Install
 
 - **Windows**: run `RemoteForKEF-win-x64-Setup.exe` (`-arm64-` on ARM PCs). The app isn't signed, so if SmartScreen appears, choose **More info → Run anyway**. It installs for your account without admin rights and adds a Start menu shortcut. To use it without installing, unzip `RemoteForKEF-win-x64.zip` into a folder where it can stay and open `Remote for KEF.exe`.
-- **macOS**: unzip, move **Remote for KEF** to Applications and open it. If macOS says it can't be opened, go to **System Settings → Privacy & Security** and click **Open Anyway**. Allow Local Network access when asked, or the speaker can't be reached.
+- **macOS**: unzip, move **Remote for KEF** to Applications and open it. Allow Local Network access when asked, or the speaker can't be reached.
 
 ### Connect the speaker
 

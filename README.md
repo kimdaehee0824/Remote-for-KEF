@@ -25,10 +25,10 @@ How each screen and feature works is in the [User guide](docs/guide.md).
 
 ## Install
 
-The builds aren't signed, so each system asks once on first launch.
+The Windows builds aren't signed yet, so Windows asks once on first launch.
 
 - **Windows 10 (1809) or 11**: run `RemoteForKEF-win-x64-Setup.exe` and choose **More info → Run anyway**. It installs for your account, no admin rights needed. To use it without installing, unzip `RemoteForKEF-win-x64.zip` and open `Remote for KEF.exe`. The ARM64 builds are on [Releases](https://github.com/kimdaehee0824/Remote-for-KEF/releases).
-- **macOS 14 or later**: move the app to Applications, open it and click **Open Anyway** in **System Settings → Privacy & Security**. Allow Local Network access when asked.
+- **macOS 14 or later**: move the app to Applications and open it. Allow Local Network access when asked.
 
 Then enter the speaker's IP address in Settings. More in the [User guide](docs/guide.md#getting-started).
 
