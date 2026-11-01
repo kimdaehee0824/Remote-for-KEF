@@ -175,7 +175,7 @@ When the speaker plays over Wi-Fi or Bluetooth, a tile with the track shows abov
 
 ### Shortcuts and the volume indicator
 
-From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>M</kbd> mutes or unmutes. Holding the key keeps changing the volume. The volume indicator shows briefly at the top right of the screen, under the menu bar, drawn like the system's own. Its tick is the limit, and the number is next to the menu bar icon. The shortcuts don't need Accessibility access. As with the Mac's own volume keys, volume up while muted unmutes.
+From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>M</kbd> mutes or unmutes. Holding the key keeps changing the volume. The volume indicator shows briefly at the top right of the screen, under the menu bar, made of the same glass and slider as the system's own. It stops at the limit, and the number is next to the menu bar icon. The shortcuts don't need Accessibility access. As with the Mac's own volume keys, volume up while muted unmutes.
 
 ### Settings: General
 
