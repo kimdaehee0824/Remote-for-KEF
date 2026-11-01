@@ -17,7 +17,7 @@ The UI is built in C# without XAML pages (styles are in `Styles.xaml`), so the c
 ```bash
 cd macos
 swift test
-scripts/build-app.sh            # build/Remote for KEF.app, signed ad hoc
+scripts/build-app.sh            # build/Remote for KEF.app
 open "build/Remote for KEF.app"
 ```
 

@@ -24,7 +24,7 @@ The only dependency is [Sparkle 2](https://sparkle-project.org) for updates, thr
 ```bash
 cd macos
 swift test                    # core, KEF driver, shared vectors
-scripts/build-app.sh          # build/Remote for KEF.app, signed ad hoc
+scripts/build-app.sh          # build/Remote for KEF.app
 open "build/Remote for KEF.app"
 ```
 

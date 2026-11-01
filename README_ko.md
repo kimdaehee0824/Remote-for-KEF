@@ -24,8 +24,6 @@
 
 ## 설치
 
-Windows 빌드는 아직 서명하지 않아서 처음 실행할 때 한 번 확인을 거칩니다.
-
 - **Windows 10(1809) 또는 11**: `RemoteForKEF-win-x64-Setup.exe`를 실행한 뒤 **추가 정보 → 실행**을 누릅니다. 관리자 권한 없이 내 계정에 설치됩니다. 설치 없이 쓰려면 `RemoteForKEF-win-x64.zip`을 풀고 `Remote for KEF.exe`를 여세요. ARM64용은 [Releases](https://github.com/kimdaehee0824/Remote-for-KEF/releases)에 있습니다.
 - **macOS 14 이상**: 앱을 응용 프로그램 폴더로 옮겨 엽니다. 로컬 네트워크 접근을 물으면 허용해 주세요.
 
