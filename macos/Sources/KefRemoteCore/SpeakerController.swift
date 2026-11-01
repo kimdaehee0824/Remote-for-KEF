@@ -223,6 +223,8 @@ public final class SpeakerController {
         self.driver = driver
         update(\.device, nil)
         update(\.snapshot, nil)
+        // A confirmation still running for the old driver stops at the epoch check and leaves this alone.
+        playbackConfirming = false
         setPlayback(.none)
         failures = 0
         missedPolls = 0

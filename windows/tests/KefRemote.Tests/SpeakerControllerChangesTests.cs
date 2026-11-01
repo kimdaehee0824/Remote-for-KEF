@@ -241,6 +241,22 @@ public class SpeakerControllerChangesTests
     }
 
     [Fact]
+    public async Task PlaybackIsReadAgainAfterSleepCutsAConfirmationShort()
+    {
+        var f = new FakeDriver { Source = "wifi", Playing = Song() };
+        var c = await Connected(f, playback: true);
+        var stuck = new TaskCompletionSource();
+        c.Delay = (ms, _) => ms == 300 ? stuck.Task : Task.CompletedTask;
+        await c.PlaybackAsync(PlaybackCommand.Next);
+
+        c.Invalidate("sleep");
+        await c.PollAsync();
+        f.Playing = Song() with { Title = "After sleep" };
+        await c.RefreshPlaybackAsync();
+        Assert.Equal("After sleep", c.Playback.Title);
+    }
+
+    [Fact]
     public async Task RejectedPlaybackCommandKeepsTheConnection()
     {
         var f = new FakeDriver { Source = "wifi", Playing = Song(), RejectPlayback = true };

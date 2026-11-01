@@ -183,6 +183,33 @@ struct SpeakerControllerChangesTests {
         #expect(c.playback.title == "Love Me Not (next)")
     }
 
+    @Test func playbackIsReadAgainAfterReconnectingDuringAConfirmation() async {
+        let driver = FakeDriver()
+        driver.source = "wifi"
+        driver.playing = Self.song()
+        driver.extraCapabilities = [.changes, .playback]
+        // The confirmation's reads never come.
+        let c = SpeakerController(sleep: { duration in
+            if duration == .milliseconds(300) { try await Task.sleep(for: .seconds(60)) }
+        })
+        c.appLimit = 30
+        c.playbackEnabled = true
+        await c.connect(driver)
+        await eventually { c.showsPlayback }
+        c.sendPlayback(.next)
+        await settle(c)
+
+        let other = FakeDriver()
+        other.source = "wifi"
+        var song = Self.song()
+        song.title = "After reconnecting"
+        other.playing = song
+        other.extraCapabilities = [.changes, .playback]
+        await c.connect(other)
+        await eventually { c.playback.title == "After reconnecting" }
+        #expect(c.playback.title == "After reconnecting")
+    }
+
     @Test func rejectedPlaybackCommandKeepsTheConnection() async {
         let driver = FakeDriver()
         driver.source = "wifi"

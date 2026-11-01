@@ -302,7 +302,6 @@ public sealed class SpeakerController : IDisposable
         StopListening();
         heldChanges = null;
         Playback = PlaybackInfo.None;
-        playbackConfirming = false;
         Driver?.Dispose();
         Driver = null;
         Device = null;
@@ -996,6 +995,8 @@ public sealed class SpeakerController : IDisposable
     void NextGeneration()
     {
         generation++;
+        // A confirmation still running for the old generation stops at its token check and leaves this alone.
+        playbackConfirming = false;
         pendingVolume?.Done.TrySetResult();
         pendingVolume = null;
         cts.Cancel();
