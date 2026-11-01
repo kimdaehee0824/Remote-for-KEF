@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import KefRemoteCore
 
 /// What a global shortcut does. Same actions as the Windows hotkeys.
 enum ShortcutAction: String, CaseIterable, Codable, Sendable {
