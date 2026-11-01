@@ -128,6 +128,22 @@ static class SelfTest
             speaker.SwitchDelayMs = 0;
             Expect(speaker.Source == "wifi" && !speaker.Muted, "wifi and unmuted");
         });
+        // Wi-Fi carries track information: the card above the flyout shows it and takes play/pause.
+        await Step("now playing", async () =>
+        {
+            await WaitFor(() => c.ShowsPlayback, "the track on wifi");
+            Expect(host.MediaCard.IsVisible, "media card shown with the flyout");
+            await Capture(host.MediaCard.Root, "30-media-card.png");
+            await host.RunWhenIdle(() => c.PlaybackAsync(PlaybackCommand.TogglePause));
+            Expect(speaker.Commands.SequenceEqual([PlaybackCommand.TogglePause]), "one play/pause");
+            await WaitFor(() => c.Playback.Status == PlaybackStatus.Paused, "paused");
+            await Capture(host.MediaCard.Root, "31-media-card-paused.png");
+            host.Settings.ShowNowPlaying = false;
+            host.SaveSettings();
+            Expect(!host.MediaCard.IsVisible, "media card hidden when turned off");
+            host.Settings.ShowNowPlaying = true;
+            host.SaveSettings();
+        });
         await Step("osd", async () =>
         {
             host.VolumeKeys.Handle(HotkeyAction.VolumeUp);
@@ -279,13 +295,27 @@ sealed class DemoSpeaker
     public string ModelName = "SP4077";
     public string Release = "LSXIILT_V2186";
     public List<int> Writes { get; } = [];
+    public PlaybackInfo Playing = new()
+    {
+        Status = PlaybackStatus.Playing,
+        Title = Loc.T("조용한 오후", "Quiet Afternoon", "静かな午後"),
+        Artist = "Remote for KEF",
+        Service = "AirPlay",
+        DurationMs = 214_000,
+        PositionMs = 62_000,
+        CanTogglePause = true,
+        CanNext = true,
+        CanPrevious = true,
+    };
+    public List<PlaybackCommand> Commands { get; } = [];
 }
 
 sealed class DemoDriver(DemoSpeaker speaker) : ISpeakerDriver
 {
     KefModel Model => KefModels.Resolve(speaker.ModelName, speaker.Release);
 
-    public DriverCapabilities Capabilities => DriverCapabilities.Volume | DriverCapabilities.Mute | DriverCapabilities.Source | DriverCapabilities.Power;
+    public DriverCapabilities Capabilities =>
+        DriverCapabilities.Volume | DriverCapabilities.Mute | DriverCapabilities.Source | DriverCapabilities.Power | DriverCapabilities.Playback;
     public IReadOnlyList<SourceOption> Sources => KefModels.SourceOptions(Model);
 
     void Online()
@@ -342,6 +372,23 @@ sealed class DemoDriver(DemoSpeaker speaker) : ISpeakerDriver
     }
 
     public int? ApproachOvershoot(int current, int target) => target > current ? KefVolumeCurve.Overshoot(target) : null;
+
+    public bool SourceHasPlayback(string? sourceId) => sourceId is "wifi" or "bluetooth";
+
+    public Task<PlaybackInfo> ReadPlaybackAsync(CancellationToken cancellationToken = default)
+    {
+        Online();
+        return Task.FromResult(speaker.Playing);
+    }
+
+    public Task SendPlaybackAsync(PlaybackCommand command, CancellationToken cancellationToken = default)
+    {
+        Online();
+        speaker.Commands.Add(command);
+        if (command == PlaybackCommand.TogglePause)
+            speaker.Playing = speaker.Playing with { Status = speaker.Playing.Status == PlaybackStatus.Playing ? PlaybackStatus.Paused : PlaybackStatus.Playing };
+        return Task.CompletedTask;
+    }
 
     public void Dispose()
     {

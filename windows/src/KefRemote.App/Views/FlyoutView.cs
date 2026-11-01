@@ -99,6 +99,12 @@ sealed class FlyoutView
     public bool IsVisible { get; private set; }
     public event Action? VisibilityChanged;
 
+    /// <summary>Where the flyout was last put, in screen pixels, with the free area and taskbar edge it was placed in.</summary>
+    public (PixelRect Window, PixelRect Area, TaskbarEdge Edge, double Scale)? Placement { get; private set; }
+
+    /// <summary>The flyout moved or changed size (the media card follows it).</summary>
+    public event Action? Placed;
+
     /// <summary>
     /// The window content with its background, for self-test captures. The stack itself has no
     /// background, and RenderTargetBitmap leaves out its empty top band.
@@ -336,6 +342,8 @@ sealed class FlyoutView
         var size = appWindow.Size;
         var (x, y) = TaskbarPlacement.NearTaskbar(area, edge, anchor.X, anchor.Y, size.Width, size.Height, (int)Math.Round(EdgeMarginDip * scale));
         appWindow.Move(new PointInt32(x, y));
+        Placement = (new PixelRect(x, y, size.Width, size.Height), area, edge, scale);
+        Placed?.Invoke();
     }
 
     // ---------- state → screen ----------

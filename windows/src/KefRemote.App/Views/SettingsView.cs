@@ -186,6 +186,14 @@ sealed class SettingsView
         };
         unstable.Visibility = unstable.IsOpen ? Visibility.Visible : Visibility.Collapsed;
 
+        var nowPlaying = new ToggleSwitch { OnContent = Loc.T("켬", "On", "オン"), OffContent = Loc.T("끔", "Off", "オフ") };
+        nowPlaying.Toggled += (_, _) =>
+        {
+            if (updating) return;
+            host.Settings.ShowNowPlaying = nowPlaying.IsOn;
+            host.SaveSettings();
+        };
+
         var openTaskbar = new Button { Content = Loc.T("작업 표시줄 설정 열기", "Open taskbar settings", "タスクバーの設定を開く") };
         openTaskbar.Click += async (_, _) => await Launcher.LaunchUriAsync(new Uri("ms-settings:taskbar"));
 
@@ -194,6 +202,10 @@ sealed class SettingsView
             Ui.PageTitle(Loc.T("일반", "General", "一般")),
             Ui.Card(Glyphs.Play, Loc.T("Windows 시작 시 실행", "Start with Windows", "Windows起動時に実行"), Loc.T("로그인하면 알림 영역에서 조용히 시작합니다", "Starts quietly in the notification area when you sign in", "サインインすると通知領域で静かに起動します"), startup),
             unstable,
+            Ui.GroupHeader(Loc.T("플라이아웃", "Flyout", "フライアウト")),
+            Ui.Card(Glyphs.Audio, Loc.T("재생 중인 곡 표시", "Show what's playing", "再生中の曲を表示"),
+                Loc.T("Wi-Fi나 블루투스로 재생할 때 플라이아웃 위에 곡 정보와 재생 버튼을 띄웁니다", "When the speaker plays over Wi-Fi or Bluetooth, shows the track and playback buttons above the flyout", "Wi-FiやBluetoothで再生しているとき、フライアウトの上に曲の情報と再生ボタンを表示します"),
+                nowPlaying),
             Ui.GroupHeader(Loc.T("알림 영역 아이콘", "Notification area icon", "通知領域のアイコン")),
             Ui.Card(Glyphs.Pin, Loc.T("아이콘을 항상 보이게 두기", "Keep the icon visible", "アイコンを常に表示する"),
                 Loc.T("Windows 11은 새 아이콘을 작업 표시줄의 ^ 안에 숨깁니다. 작업 표시줄 설정의 '기타 시스템 트레이 아이콘'에서 Remote for KEF를 켜 두면 한 번에 누를 수 있습니다.", "Windows 11 hides new icons behind the ^ on the taskbar. Turn on Remote for KEF under 'Other system tray icons' in taskbar settings to reach it in one click.", "Windows 11は新しいアイコンをタスクバーの ^ の中に隠します。タスクバーの設定の「その他のシステム トレイ アイコン」でRemote for KEFをオンにすると、ワンクリックで開けます。"),
@@ -203,6 +215,7 @@ sealed class SettingsView
         return (panel, () =>
         {
             startup.IsOn = host.SelfTest ? host.Settings.StartWithWindows : StartupManager.IsEnabled;
+            nowPlaying.IsOn = host.Settings.ShowNowPlaying;
             refreshUpdates();
         });
     }

@@ -21,8 +21,8 @@ sealed record HostEnvironment(string SettingsFolder, Func<DriverOptions, ISpeake
 }
 
 /// <summary>
-/// Application lifetime: owns the speaker controller, settings, tray icon, hotkeys and the three surfaces
-/// (tray flyout, volume display, settings window). Everything runs on the UI thread.
+/// Application lifetime: owns the speaker controller, settings, tray icon, hotkeys and the surfaces
+/// (tray flyout with its media card, volume display, settings window). Everything runs on the UI thread.
 /// </summary>
 sealed class AppHost : IDisposable
 {
@@ -43,6 +43,7 @@ sealed class AppHost : IDisposable
     readonly HashSet<DispatcherQueueTimer> laterTimers = [];
     readonly FlyoutView flyout;
     readonly OsdView osd;
+    readonly MediaCardView mediaCard;
     SettingsView? settingsWindow;
     bool connecting;
     bool configurationError;
@@ -83,6 +84,7 @@ sealed class AppHost : IDisposable
     public IReadOnlyList<HotkeyBinding> HotkeyBindings => HotkeyBinding.Normalize(Settings.Hotkeys);
     public FlyoutView Flyout => flyout;
     public OsdView Osd => osd;
+    public MediaCardView MediaCard => mediaCard;
     public HotkeyVolumeCoordinator VolumeKeys => volumeKeys;
 
     /// <summary>Controller state, settings or hotkey registration changed.</summary>
@@ -108,6 +110,7 @@ sealed class AppHost : IDisposable
         osd = new OsdView(this);
         flyout = new FlyoutView(this);
         flyout.VisibilityChanged += OnFlyoutVisibilityChanged;
+        mediaCard = new MediaCardView(this);
         tray.Activated += (x, y) => flyout.Toggle(TrayAnchor(new PointInt32(x, y)));
 
         volumeKeys = new HotkeyVolumeCoordinator(
@@ -307,6 +310,7 @@ sealed class AppHost : IDisposable
         Controller.ApproachFromAbove = Settings.ApproachFromAbove;
         volumeKeys.Step = Settings.HotkeyVolumeStep;
         volumeKeys.OsdEnabled = Settings.ShowVolumeOsd;
+        Controller.PlaybackEnabled = Settings.ShowNowPlaying;
     }
 
     /// <summary>Registers the saved shortcuts. Returns the outcome per action.</summary>
@@ -475,6 +479,7 @@ sealed class AppHost : IDisposable
         showWait?.Unregister(null);
         showEvent?.Dispose();
         settingsWindow?.Close();
+        mediaCard.Close();
         flyout.Close();
         osd.Close();
         Hotkeys.Dispose();

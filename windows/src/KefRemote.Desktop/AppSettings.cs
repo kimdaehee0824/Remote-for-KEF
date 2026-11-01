@@ -19,6 +19,9 @@ public sealed class AppSettings
     public int HotkeyVolumeStep { get; set; } = 1;
     public bool ShowVolumeOsd { get; set; } = true;
 
+    /// <summary>Show what the speaker is playing in a card above the flyout, with play/pause and skip.</summary>
+    public bool ShowNowPlaying { get; set; } = true;
+
     /// <summary>Raise the volume through a short overshoot so it sounds the same as when lowered to it.</summary>
     public bool ApproachFromAbove { get; set; }
 

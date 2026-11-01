@@ -90,6 +90,22 @@ public static class TaskbarPlacement
         };
     }
 
+    /// <summary>
+    /// Top-left corner for a card that goes with the flyout at <paramref name="flyout"/>, like the media controls
+    /// above Quick Settings: on the side away from the taskbar, <paramref name="gap"/> pixels apart, the same left
+    /// edge. Goes to the other side when that side has no room, and stays inside <paramref name="area"/>.
+    /// </summary>
+    public static (int X, int Y) Companion(PixelRect area, TaskbarEdge edge, PixelRect flyout, int width, int height, int gap)
+    {
+        int above = flyout.Y - gap - height, below = flyout.Bottom + gap;
+        bool fitsAbove = above >= area.Y, fitsBelow = below + height <= area.Bottom;
+        int y = edge == TaskbarEdge.Top
+            ? fitsBelow || !fitsAbove ? below : above
+            : fitsAbove || !fitsBelow ? above : below;
+        int x = Math.Clamp(flyout.X, area.X, Math.Max(area.X, area.Right - width));
+        return (x, Math.Clamp(y, area.Y, Math.Max(area.Y, area.Bottom - height)));
+    }
+
     /// <summary>Top-left corner for a window in the bottom right corner of <paramref name="area"/>, like the volume indicator.</summary>
     public static (int X, int Y) BottomRight(PixelRect area, int width, int height, int margin) =>
         (Math.Max(area.X + margin, area.Right - width - margin), Math.Max(area.Y + margin, area.Bottom - height - margin));
