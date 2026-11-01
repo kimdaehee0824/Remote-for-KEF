@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import KefRemoteCore
 import KefW2Driver
 import Observation
@@ -9,6 +10,7 @@ enum SettingsTab: Hashable {
     case general
     case speaker
     case volume
+    case shortcuts
 }
 
 /// App-level state: saved settings, the speaker controller and system hooks.
@@ -48,6 +50,22 @@ final class AppModel {
     private var speakerModels: [String: String] {
         didSet { defaults.set(speakerModels, forKey: Keys.speakerModels) }
     }
+    /// Global shortcuts. An action that isn't in here is off.
+    private(set) var shortcuts: [ShortcutAction: Shortcut]
+    /// Actions whose shortcut couldn't be registered, usually because another app holds it.
+    private(set) var shortcutFailures: Set<ShortcutAction> = []
+    /// The action whose shortcut settings is recording. Every shortcut is off meanwhile,
+    /// so the keys reach the recorder.
+    private(set) var recordingShortcut: ShortcutAction?
+    private(set) var recordingError: String?
+    /// Volume units per press of a volume shortcut, or `VolumeSteps.perceptual`.
+    var volumeKeyStep: Int {
+        didSet { defaults.set(volumeKeyStep, forKey: Keys.volumeKeyStep) }
+    }
+    /// Show the volume indicator when a shortcut changes the volume. Problems show either way.
+    var showsVolumeHUD: Bool {
+        didSet { defaults.set(showsVolumeHUD, forKey: Keys.showVolumeHUD) }
+    }
     /// Tab the settings window shows when it opens next.
     var settingsTab: SettingsTab = .general
     private(set) var loginItemStatus: SMAppService.Status = .notRegistered
@@ -58,6 +76,8 @@ final class AppModel {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var deviceReadAt: ContinuousClock.Instant?
+    @ObservationIgnored private var volumeKeys: VolumeKeys?
+    @ObservationIgnored private var recordingMonitor: Any?
 
     private enum Keys {
         static let host = "speakerHost"
@@ -67,6 +87,9 @@ final class AppModel {
         static let approachFromAbove = "approachFromAbove"
         static let speakerFinish = "speakerFinish"
         static let speakerModels = "speakerModels"
+        static let shortcuts = "shortcuts"
+        static let volumeKeyStep = "volumeKeyStep"
+        static let showVolumeHUD = "showVolumeHUD"
     }
 
     /// The self-test passes its own defaults and keeps away from the keychain.
@@ -80,6 +103,10 @@ final class AppModel {
         approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
         speakerFinishID = defaults.string(forKey: Keys.speakerFinish)
         speakerModels = defaults.dictionary(forKey: Keys.speakerModels) as? [String: String] ?? [:]
+        shortcuts = Self.loadShortcuts(defaults.data(forKey: Keys.shortcuts))
+        let step = defaults.object(forKey: Keys.volumeKeyStep) as? Int ?? 1
+        volumeKeyStep = VolumeSteps.choices.contains(step) ? step : 1
+        showsVolumeHUD = defaults.object(forKey: Keys.showVolumeHUD) as? Bool ?? true
         controller.approachFromAbove = approachFromAbove
         controller.playbackEnabled = showsNowPlaying
         if defaults.object(forKey: Keys.appLimit) != nil {
@@ -92,6 +119,8 @@ final class AppModel {
         guard !started else { return }
         started = true
         observeSleep()
+        volumeKeys = VolumeKeys(model: self)
+        applyShortcuts()
         controller.startMonitoring()
         if !host.isEmpty { connect() }
     }
@@ -189,6 +218,92 @@ final class AppModel {
         if let tab { settingsTab = tab }
         NSApp.activate()
         open()
+    }
+
+    // MARK: Shortcuts
+
+    /// Saved as `{"volumeUp": {...}, "toggleMute": null}`: a missing action keeps its
+    /// default, null turns it off.
+    private static func loadShortcuts(_ data: Data?) -> [ShortcutAction: Shortcut] {
+        var result = Shortcut.defaults
+        guard let data, let saved = try? JSONDecoder().decode([String: Shortcut?].self, from: data) else { return result }
+        for (name, shortcut) in saved {
+            guard let action = ShortcutAction(rawValue: name) else { continue }
+            result[action] = shortcut
+        }
+        return result
+    }
+
+    private func saveShortcuts() {
+        var saved: [String: Shortcut?] = [:]
+        for action in ShortcutAction.allCases { saved[action.rawValue] = shortcuts[action] }
+        defaults.set(try? JSONEncoder().encode(saved), forKey: Keys.shortcuts)
+    }
+
+    /// Registers the shortcuts, except while one is being recorded. The self-test
+    /// leaves the keyboard alone.
+    func applyShortcuts() {
+        guard started, recordingShortcut == nil, SelfTest.folder == nil else { return }
+        shortcutFailures = HotkeyCenter.shared.register(shortcuts)
+    }
+
+    func resetShortcuts() {
+        shortcuts = Shortcut.defaults
+        saveShortcuts()
+        applyShortcuts()
+    }
+
+    /// Settings' recorder: the next key press becomes the shortcut. Esc cancels,
+    /// Delete turns the shortcut off.
+    func startRecording(_ action: ShortcutAction) {
+        stopRecording()
+        recordingShortcut = action
+        recordingError = nil
+        HotkeyCenter.shared.unregisterAll()
+        recordingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let code = event.keyCode
+            let flags = event.modifierFlags
+            let characters = event.charactersIgnoringModifiers
+            let used = MainActor.assumeIsolated { self?.record(code, flags, characters) ?? false }
+            return used ? nil : event
+        }
+    }
+
+    func stopRecording() {
+        if let recordingMonitor { NSEvent.removeMonitor(recordingMonitor) }
+        recordingMonitor = nil
+        guard recordingShortcut != nil else { return }
+        recordingShortcut = nil
+        recordingError = nil
+        applyShortcuts()
+    }
+
+    private func record(_ code: UInt16, _ flags: NSEvent.ModifierFlags, _ characters: String?) -> Bool {
+        guard let action = recordingShortcut else { return false }
+        let plain = flags.isDisjoint(with: Shortcut.relevantModifiers)
+        if plain, Int(code) == kVK_Escape {
+            stopRecording()
+            return true
+        }
+        if plain, Int(code) == kVK_Delete || Int(code) == kVK_ForwardDelete {
+            shortcuts[action] = nil
+            saveShortcuts()
+            stopRecording()
+            return true
+        }
+        switch Shortcut.recorded(keyCode: code, modifiers: flags, characters: characters) {
+        case let .success(shortcut):
+            if let other = ShortcutAction.allCases.first(where: { $0 != action && shortcuts[$0]?.sameKeys(as: shortcut) == true }) {
+                recordingError = Shortcut.RecordingError.duplicate(other).message
+                return true
+            }
+            shortcuts[action] = shortcut
+            saveShortcuts()
+            stopRecording()
+        case let .failure(error):
+            recordingError = error.message
+        }
+        return true
     }
 
     // MARK: Login item

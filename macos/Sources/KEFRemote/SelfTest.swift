@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import KefRemoteCore
 import KefW2Driver
 import SwiftUI
@@ -152,6 +153,46 @@ enum SelfTest {
             speaker.offline = false
             await controller.refresh()
             try expect(controller.isOnline, "back online")
+        }
+        await step("volume shortcuts") {
+            let keys = VolumeKeys(model: model)
+            controller.setVolume(20)
+            try await settle()
+            keys.press(.volumeUp)
+            try await settle()
+            try expect(speaker.volume == 21, "21 after one press, got \(speaker.volume)")
+            model.volumeKeyStep = 5
+            keys.press(.volumeUp)
+            keys.press(.volumeUp)
+            try await settle()
+            try expect(speaker.volume == 30, "stops at the limit 30, got \(speaker.volume)")
+            keys.press(.volumeDown)
+            try await settle()
+            try expect(speaker.volume == 25, "25 after one press down, got \(speaker.volume)")
+            model.volumeKeyStep = 1
+            keys.press(.toggleMute)
+            try await settle()
+            try expect(speaker.muted, "muted")
+            let state = HUDState()
+            try await Capture(width: HUDView.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-muted.png")
+            keys.press(.volumeUp)
+            try await settle()
+            try expect(!speaker.muted && speaker.volume == 26, "volume up unmutes and raises, got \(speaker.muted) \(speaker.volume)")
+            try await Capture(width: HUDView.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud.png")
+            state.content = .limit(loc("상한 30", "Limit 30", "上限 30"))
+            try await Capture(width: HUDView.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-limit-dark.png")
+            controller.setVolume(20)
+            try await settle()
+        }
+        await step("shortcut recorder rules") {
+            let command = Shortcut.recorded(keyCode: UInt16(kVK_ANSI_K), modifiers: [.option, .command], characters: "k")
+            try expect((try? command.get())?.display == "⌥⌘K", "⌥⌘K")
+            if case .success = Shortcut.recorded(keyCode: UInt16(kVK_ANSI_K), modifiers: [.shift], characters: "K") {
+                throw Failure(description: "expected ⇧K alone to be refused")
+            }
+            try expect((try? Shortcut.recorded(keyCode: UInt16(kVK_F13), modifiers: [], characters: nil).get())?.display == "F13", "F13 alone")
+            try expect(Shortcut.defaults[.volumeUp]?.display == "⌃⌥⌘↑", "default ⌃⌥⌘↑")
+            try await Capture(width: 500) { ShortcutSettings().environment(model) }.save(folder, "32-settings-shortcuts.png")
         }
         await step("speaker finish") {
             model.speakerFinishID = "lsx-ii-lt/sage-green"

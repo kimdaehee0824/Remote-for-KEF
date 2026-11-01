@@ -19,7 +19,95 @@ struct SettingsView: View {
             VolumeSettings()
                 .tabItem { Label(loc("음량", "Volume", "音量"), systemImage: "speaker.wave.2") }
                 .tag(SettingsTab.volume)
+            ShortcutSettings()
+                .tabItem { Label(loc("단축키", "Shortcuts", "ショートカット"), systemImage: "keyboard") }
+                .tag(SettingsTab.shortcuts)
         }
+        .onDisappear { model.stopRecording() }
+    }
+}
+
+/// Global shortcuts with a recorder for each, the step per press and the indicator.
+struct ShortcutSettings: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        Form {
+            Section {
+                ForEach(ShortcutAction.allCases, id: \.self) { action in
+                    ShortcutRow(action: action)
+                }
+                HStack {
+                    Spacer()
+                    Button(loc("기본값으로 되돌리기", "Restore Defaults", "デフォルトに戻す")) { model.resetShortcuts() }
+                        .disabled(model.shortcuts == Shortcut.defaults)
+                }
+            } header: {
+                Text(loc("단축키", "Shortcuts", "ショートカット"))
+            } footer: {
+                Text(wrapping: loc("칸을 누른 뒤 새 키 조합을 누르세요. esc는 취소, delete는 끄기입니다. 앱이 켜져 있는 동안 어느 앱에서든 동작하며, 손쉬운 사용 권한은 필요 없습니다.", "Click a box, then press the new key combination. esc cancels and delete turns it off. The shortcuts work in any app while this app runs, without Accessibility access.", "ボックスをクリックしてから新しいキーの組み合わせを押してください。escでキャンセル、deleteでオフになります。このアプリの起動中はどのアプリでも動作し、アクセシビリティの許可は必要ありません。"))
+            }
+            Section {
+                Picker(selection: $model.volumeKeyStep) {
+                    ForEach(VolumeSteps.choices, id: \.self) { step in
+                        Text(step == VolumeSteps.perceptual ? loc("체감 음량 기준", "Perceived loudness", "体感音量") : "\(step)").tag(step)
+                    }
+                } label: {
+                    Text(loc("한 번 누를 때 음량", "Volume per press", "1回押したときの音量"))
+                    Text(loc("체감 음량 기준은 12, 15, 19, 22 …처럼 소리 크기가 고르게 늘도록 움직입니다", "Perceived loudness follows steps such as 12, 15, 19, 22 … so the loudness rises evenly", "体感音量は12、15、19、22 …のように音の大きさが均等に増えるように動きます"))
+                }
+                Toggle(isOn: $model.showsVolumeHUD) {
+                    Text(loc("음량을 바꿀 때 화면에 표시", "Show the volume on screen", "音量を変えたときに画面に表示"))
+                    Text(loc("메뉴 막대 아래 오른쪽에 잠깐 보여 줍니다. 꺼 두어도 연결 문제와 상한은 표시합니다", "Shows briefly at the top right, under the menu bar. Connection problems and the limit show even when this is off", "メニューバーの下の右側に少しの間表示します。オフでも接続の問題と上限は表示します"))
+                }
+            } header: {
+                Text(loc("동작", "Behavior", "動作"))
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 500, height: 470)
+        .onDisappear { model.stopRecording() }
+    }
+}
+
+/// The action, its shortcut as a button that records the next key press, and a
+/// line when it couldn't be registered.
+private struct ShortcutRow: View {
+    @Environment(AppModel.self) private var model
+    let action: ShortcutAction
+
+    var body: some View {
+        let recording = model.recordingShortcut == action
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent {
+                Button {
+                    if recording { model.stopRecording() } else { model.startRecording(action) }
+                } label: {
+                    Text(label(recording: recording))
+                        .monospacedDigit()
+                        .foregroundStyle(recording || model.shortcuts[action] == nil ? Color.secondary : Color.primary)
+                        .frame(minWidth: 110)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(loc("\(action.name) 단축키", "\(action.name) shortcut", "\(action.name)のショートカット"))
+                .accessibilityValue(model.shortcuts[action]?.display ?? loc("끔", "Off", "オフ"))
+            } label: {
+                Label(action.name, systemImage: action.symbol)
+            }
+            if recording, let error = model.recordingError {
+                Text(error).font(.callout).foregroundStyle(.red)
+            } else if model.shortcutFailures.contains(action) {
+                Text(wrapping: loc("다른 앱이 이미 쓰고 있어 등록하지 못했습니다. 다른 조합으로 바꿔 주세요.", "Another app already uses it, so it couldn't be registered. Choose another combination.", "ほかのアプリがすでに使っているため登録できませんでした。別の組み合わせに変更してください。"))
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func label(recording: Bool) -> String {
+        if recording { return loc("키 조합을 누르세요", "Press keys", "キーを押してください") }
+        return model.shortcuts[action]?.display ?? loc("끔", "Off", "オフ")
     }
 }
 
