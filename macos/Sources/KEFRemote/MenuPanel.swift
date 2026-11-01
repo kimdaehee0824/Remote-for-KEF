@@ -204,7 +204,13 @@ private struct PanelHeader: View {
 /// Now Playing module in Control Center shows (measured on macOS 27): a 40 pt cover,
 /// the title, "artist – album" and previous, play/pause and next in the secondary
 /// color. Laid out in one row, since the panel is wider than the module.
+///
+/// The cover keeps only a slight rounding, as album art usually has, and the tile's
+/// corners are concentric with it: tile radius = cover radius + the inset between them.
 private struct NowPlayingModule: View {
+    static let inset: CGFloat = 10
+    static var tileRadius: CGFloat { Artwork.radius + inset }
+
     @Environment(AppModel.self) private var model
     let playback: PlaybackInfo
 
@@ -242,18 +248,19 @@ private struct NowPlayingModule: View {
                 }
             }
         }
-        .padding(10)
+        .padding(Self.inset)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(loc("재생 중", "Now Playing", "再生中"))
 
+        let shape = RoundedRectangle(cornerRadius: Self.tileRadius, style: .continuous)
         #if compiler(>=6.2)
         if #available(macOS 26, *) {
-            tile.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            tile.glassEffect(.regular, in: shape)
         } else {
-            tile.background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            tile.background(.quinary, in: shape)
         }
         #else
-        tile.background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        tile.background(.quinary, in: shape)
         #endif
     }
 
@@ -273,10 +280,13 @@ private struct NowPlayingModule: View {
 
 /// The cover the speaker reports, or a note while there is none or it can't be loaded.
 private struct Artwork: View {
+    /// Just enough to soften the corners.
+    static let radius: CGFloat = 4
+
     let url: String?
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
             if let image = phase.image {
                 image.resizable().scaledToFill()

@@ -98,12 +98,13 @@
     <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
   </Style>
 
-  <!-- Album cover on the media card, and its empty placeholder. -->
+  <!-- Album cover on the media card, and its empty placeholder. Only slightly rounded, as album art is:
+       the Fluent control radius 4 inside the card's 8, the same pair the system uses for controls in a flyout. -->
   <Style x:Key="KefCoverTile" TargetType="Border">
     <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
     <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="CornerRadius" Value="4" />
   </Style>
 
   <!-- Solid fallback behind the OSD and flyout when acrylic is unavailable (or for self-test captures). -->
