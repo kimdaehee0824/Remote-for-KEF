@@ -200,9 +200,10 @@ private struct PanelHeader: View {
 
 // MARK: Now playing
 
-/// What the speaker plays, as its own tile above the volume like the Now Playing
-/// module in Control Center: cover, title and artist, then previous, play/pause and
-/// next. A thin line shows how far the track is when the speaker knows its length.
+/// What the speaker plays, as its own glass tile above the volume, with what the
+/// Now Playing module in Control Center shows (measured on macOS 27): a 40 pt cover,
+/// the title, "artist – album" and previous, play/pause and next in the secondary
+/// color. Laid out in one row, since the panel is wider than the module.
 private struct NowPlayingModule: View {
     @Environment(AppModel.self) private var model
     let playback: PlaybackInfo
@@ -210,45 +211,34 @@ private struct NowPlayingModule: View {
     var body: some View {
         let controller = model.controller
         let playing = playback.status == .playing
-        let tile = VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Artwork(url: playback.artworkURL)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(playback.title)
-                        .font(.body.weight(.semibold))
+        let tile = HStack(spacing: 10) {
+            Artwork(url: playback.artworkURL)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(playback.title)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    if let subtitle = (playback.artist.nonEmpty ?? playback.service) {
-                        Text(subtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .help(details)
-                Spacer(minLength: 4)
-                HStack(spacing: 2) {
-                    TransportButton(symbol: "backward.fill", name: loc("이전 곡", "Previous", "前の曲"), enabled: playback.canPrevious) {
-                        controller.sendPlayback(.previous)
-                    }
-                    TransportButton(
-                        symbol: playing ? "pause.fill" : "play.fill",
-                        name: playing ? loc("일시 정지", "Pause", "一時停止") : loc("재생", "Play", "再生"),
-                        enabled: playback.canTogglePause, large: true
-                    ) {
-                        controller.sendPlayback(.togglePause)
-                    }
-                    TransportButton(symbol: "forward.fill", name: loc("다음 곡", "Next", "次の曲"), enabled: playback.canNext) {
-                        controller.sendPlayback(.next)
-                    }
                 }
             }
-            if playback.durationMs > 0 {
-                if playing {
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        TrackProgress(position: controller.playbackPositionMs(), duration: playback.durationMs)
-                    }
-                } else {
-                    TrackProgress(position: controller.playbackPositionMs(), duration: playback.durationMs)
+            .help(details)
+            Spacer(minLength: 4)
+            HStack(spacing: 4) {
+                TransportButton(symbol: "backward.fill", size: 14, name: loc("이전 곡", "Previous", "前の曲"), enabled: playback.canPrevious) {
+                    controller.sendPlayback(.previous)
+                }
+                TransportButton(
+                    symbol: playing ? "pause.fill" : "play.fill", size: 19,
+                    name: playing ? loc("일시 정지", "Pause", "一時停止") : loc("재생", "Play", "再生"),
+                    enabled: playback.canTogglePause
+                ) {
+                    controller.sendPlayback(.togglePause)
+                }
+                TransportButton(symbol: "forward.fill", size: 14, name: loc("다음 곡", "Next", "次の曲"), enabled: playback.canNext) {
+                    controller.sendPlayback(.next)
                 }
             }
         }
@@ -258,13 +248,19 @@ private struct NowPlayingModule: View {
 
         #if compiler(>=6.2)
         if #available(macOS 26, *) {
-            tile.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            tile.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         } else {
             tile.background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         #else
         tile.background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         #endif
+    }
+
+    /// "Artist – Album" as in Control Center, or what there is of it, or the service.
+    private var subtitle: String? {
+        let parts = [playback.artist, playback.album].filter { !$0.isEmpty }
+        return parts.isEmpty ? playback.service : parts.joined(separator: " – ")
     }
 
     /// Title, artist, album and service, for the tooltip.
@@ -280,7 +276,7 @@ private struct Artwork: View {
     let url: String?
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         AsyncImage(url: url.flatMap(URL.init(string:))) { phase in
             if let image = phase.image {
                 image.resizable().scaledToFill()
@@ -298,13 +294,13 @@ private struct Artwork: View {
     }
 }
 
-/// A plain symbol like the transport buttons in Control Center, with the hover
-/// highlight of the input rows.
+/// A plain symbol in the secondary color like the buttons in the Control Center
+/// module, with the hover highlight of the input rows.
 private struct TransportButton: View {
     let symbol: String
+    let size: CGFloat
     let name: String
     let enabled: Bool
-    var large = false
     let action: () -> Void
 
     @State private var hovering = false
@@ -312,54 +308,18 @@ private struct TransportButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: large ? 17 : 13, weight: .semibold))
-                .frame(width: 28, height: 28)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 30, height: 30)
                 .contentShape(Circle())
                 .background(Circle().fill(hovering && enabled ? Color.primary.opacity(0.08) : Color.clear))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.35)
+        .opacity(enabled ? 1 : 0.4)
         .onHover { hovering = $0 }
         .help(name)
         .accessibilityLabel(name)
-    }
-}
-
-/// Elapsed time, a thin line and the time left, as under the Control Center scrubber.
-private struct TrackProgress: View {
-    let position: Int
-    let duration: Int
-
-    var body: some View {
-        let elapsed = min(max(0, position), duration)
-        let fraction = position < 0 ? 0 : CGFloat(elapsed) / CGFloat(duration)
-        HStack(spacing: 8) {
-            Text(Self.time(position < 0 ? nil : elapsed))
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.15))
-                    Capsule().fill(Color.primary.opacity(0.55))
-                        .frame(width: proxy.size.width * fraction)
-                }
-            }
-            .frame(height: 4)
-            Text("-" + Self.time(position < 0 ? nil : duration - elapsed))
-        }
-        .font(.caption2)
-        .monospacedDigit()
-        .foregroundStyle(.secondary)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(loc("재생 위치", "Position", "再生位置"))
-        .accessibilityValue(position < 0 ? "" : loc("\(Self.time(elapsed)) / \(Self.time(duration))", "\(Self.time(elapsed)) of \(Self.time(duration))", "\(Self.time(elapsed)) / \(Self.time(duration))"))
-    }
-
-    /// 3:07, or 1:02:03 for an hour or more; --:-- when the position is unknown.
-    static func time(_ ms: Int?) -> String {
-        guard let ms else { return "--:--" }
-        let seconds = ms / 1000
-        let (h, m, s) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }
 

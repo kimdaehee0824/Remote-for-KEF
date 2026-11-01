@@ -174,13 +174,13 @@ enum SelfTest {
             try await settle()
             try expect(speaker.muted, "muted")
             let state = HUDState()
-            try await Capture(width: HUDView.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-muted.png")
+            try await Capture(width: HUDView.size.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-muted.png")
             keys.press(.volumeUp)
             try await settle()
             try expect(!speaker.muted && speaker.volume == 26, "volume up unmutes and raises, got \(speaker.muted) \(speaker.volume)")
-            try await Capture(width: HUDView.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud.png")
-            state.content = .limit(loc("상한 30", "Limit 30", "上限 30"))
-            try await Capture(width: HUDView.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-limit-dark.png")
+            try await Capture(width: HUDView.size.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud.png")
+            state.content = .limit
+            try await Capture(width: HUDView.size.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-limit-dark.png")
             controller.setVolume(20)
             try await settle()
         }

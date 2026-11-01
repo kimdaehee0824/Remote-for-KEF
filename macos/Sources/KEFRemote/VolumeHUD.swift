@@ -39,9 +39,7 @@ final class VolumeKeys {
             if direction > 0, state.muted, !controller.isBusy { controller.toggleMute() }
             if target != current { controller.setVolume(target) }
             if direction > 0, target == current, current >= limit {
-                hud.show(.limit(current > limit
-                    ? loc("상한 \(limit)보다 높아 올리지 않습니다", "Above the limit \(limit), not raised", "上限 \(limit) を超えているため上げません")
-                    : loc("상한 \(limit)", "Limit \(limit)", "上限 \(limit)")))
+                hud.show(.limit)
             } else if model.showsVolumeHUD {
                 hud.show(.level)
             }
@@ -52,20 +50,29 @@ final class VolumeKeys {
     }
 }
 
-/// The volume indicator: a small glass panel like the system's, for the speaker's
-/// volume. It never takes focus or clicks, and fades out a moment after the last press.
+/// The volume indicator, drawn like the system's on macOS 26 and later (measured on
+/// macOS 27): a 308 × 66 pt glass capsule 10 pt under the menu bar and 28.5 pt from
+/// the right edge, the speaker symbol and a track of 16 segments, no text. It grows
+/// in from 92 %, stays about a second and shrinks out, and never takes focus or clicks.
+///
+/// Two things are added for the speaker: the current segment fills in part, so a
+/// press of 1 still shows, and a tick marks the limit. The number is in the menu bar
+/// next to the icon, where the system shows its own volume pill while the indicator is up.
 @MainActor
 final class VolumeHUD {
     enum Content: Equatable {
         /// The speaker's volume, live from the controller.
         case level
-        /// The volume with a line on why it didn't go higher.
-        case limit(String)
-        /// Why nothing changed.
+        /// The volume is at the limit (or above it), so up did nothing.
+        case limit
+        /// Why nothing changed, in place of the track.
         case problem(String)
     }
 
-    static let shownFor: Duration = .milliseconds(1500)
+    /// How long the indicator stays after the last press before it starts to go.
+    static let shownFor: Duration = .milliseconds(1150)
+    static let inDuration = 0.25
+    static let outDuration = 0.25
 
     private let model: AppModel
     private let state = HUDState()
@@ -84,43 +91,39 @@ final class VolumeHUD {
         place(panel)
         shownCount += 1
         if !panel.isVisible {
-            panel.alphaValue = 1
+            // Drawn small and clear first, then grown in on the next turn.
+            state.isShown = false
             panel.orderFrontRegardless()
-        } else if panel.alphaValue < 1 {
-            // Back from a fade that had started.
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.1
-                panel.animator().alphaValue = 1
+            Task { [weak self] in
+                guard let self else { return }
+                withAnimation(.easeOut(duration: Self.inDuration)) { self.state.isShown = true }
             }
+        } else if !state.isShown {
+            withAnimation(.easeOut(duration: Self.inDuration)) { state.isShown = true }
         }
         hideTask?.cancel()
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: Self.shownFor)
             guard !Task.isCancelled else { return }
-            self?.fadeOut()
+            self?.hide()
         }
     }
 
-    private func fadeOut() {
-        guard let panel else { return }
+    private func hide() {
         let count = shownCount
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.35
-            panel.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            Task { @MainActor in self?.hideIfStill(count) }
+        withAnimation(.easeIn(duration: Self.outDuration)) { state.isShown = false }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.outDuration + 0.05))
+            // Unless another press brought it back meanwhile.
+            guard let self, count == self.shownCount, !self.state.isShown else { return }
+            self.panel?.orderOut(nil)
         }
-    }
-
-    /// Unless another press came during the fade.
-    private func hideIfStill(_ count: Int) {
-        guard count == shownCount else { return }
-        panel?.orderOut(nil)
     }
 
     private func makePanel() -> NSPanel {
+        let size = HUDView.windowSize
         let panel = NSPanel(
-            contentRect: CGRect(x: 0, y: 0, width: HUDView.width, height: 60),
+            contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: true
         )
@@ -133,21 +136,23 @@ final class VolumeHUD {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        panel.contentView = NSHostingView(rootView: HUDView(model: model, state: state))
+        let host = NSHostingView(rootView: HUDWindowContent(model: model, state: state))
+        host.sizingOptions = []
+        host.frame = CGRect(origin: .zero, size: size)
+        panel.contentView = host
         return panel
     }
 
-    /// Top right of the screen with the menu bar, under it, where the system's own indicator appears.
+    /// On the screen with the active menu bar, under it at the right, where the system's own indicator appears.
     private func place(_ panel: NSPanel) {
-        guard let screen = NSScreen.screens.first, let view = panel.contentView else { return }
-        view.layoutSubtreeIfNeeded()
-        let size = view.fittingSize
-        let area = screen.visibleFrame
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let margin = HUDView.windowMargin
+        let capsule = HUDView.size
         let origin = CGPoint(
-            x: area.maxX - size.width - HUDView.screenMargin,
-            y: area.maxY - size.height - HUDView.screenMargin
+            x: screen.frame.maxX - HUDView.rightInset - capsule.width - margin,
+            y: screen.visibleFrame.maxY - HUDView.topInset - capsule.height - margin
         )
-        panel.setFrame(CGRect(origin: origin, size: size), display: true)
+        panel.setFrame(CGRect(origin: origin, size: HUDView.windowSize), display: false)
     }
 }
 
@@ -155,60 +160,86 @@ final class VolumeHUD {
 @Observable
 final class HUDState {
     var content: VolumeHUD.Content = .level
+    var isShown = false
 }
 
-/// Icon, level bar and number in one glass rounded rectangle.
+/// The capsule with room around it, so growing in and the glass edge aren't clipped.
+private struct HUDWindowContent: View {
+    let model: AppModel
+    let state: HUDState
+
+    var body: some View {
+        HUDView(model: model, state: state)
+            .scaleEffect(state.isShown ? 1 : 0.92)
+            .opacity(state.isShown ? 1 : 0)
+            .frame(width: HUDView.windowSize.width, height: HUDView.windowSize.height)
+    }
+}
+
+/// Symbol and segmented track in one glass capsule, sized and placed as measured on macOS 27.
 struct HUDView: View {
-    static let width: CGFloat = 270
-    static let screenMargin: CGFloat = 10
+    static let size = CGSize(width: 308, height: 66)
+    static let rightInset: CGFloat = 28.5
+    static let topInset: CGFloat = 10
+    static let windowMargin: CGFloat = 20
+    static var windowSize: CGSize { CGSize(width: size.width + windowMargin * 2, height: size.height + windowMargin * 2) }
+    /// The speaker's body starts here; the slashed symbol 2.5 pt earlier.
+    static let symbolInset: CGFloat = 20.5
+    static let trackLeading: CGFloat = 62.5
+    static let trackWidth: CGFloat = 214
 
     let model: AppModel
     let state: HUDState
 
     var body: some View {
         let controller = model.controller
-        let snapshot = controller.snapshot
-        let volume = controller.pendingVolume ?? snapshot?.volume ?? 0
+        let volume = controller.pendingVolume ?? controller.snapshot?.volume ?? 0
         let muted = muteShown(controller)
-        let content = VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(controller.device?.name.nonEmpty ?? "Remote for KEF")
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if case .problem = state.content {} else {
-                    Text(muted ? loc("음소거", "Muted", "ミュート") : "\(volume)")
-                        .font(.headline)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .contentTransition(.numericText(value: Double(volume)))
-                }
-            }
+        let content = ZStack(alignment: .leading) {
             switch state.content {
-            case .level:
-                LevelRow(volume: volume, muted: muted, limit: controller.effectiveLimit)
-            case let .limit(text):
-                LevelRow(volume: volume, muted: muted, limit: controller.effectiveLimit)
-                Text(text).font(.caption).foregroundStyle(.secondary)
+            case .level, .limit:
+                let symbol = Self.symbol(volume: volume, muted: muted)
+                Image(systemName: symbol)
+                    .resizable()
+                    .fontWeight(.semibold)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(height: Self.symbolHeight(symbol))
+                    .foregroundStyle(.primary)
+                    .padding(.leading, muted ? Self.symbolInset - 2.5 : Self.symbolInset)
+                SegmentedTrack(
+                    volume: muted ? 0 : volume,
+                    limit: controller.effectiveLimit,
+                    atLimit: state.content == .limit
+                )
+                .frame(width: Self.trackWidth)
+                .padding(.leading, Self.trackLeading)
             case let .problem(text):
-                Label(text, systemImage: "exclamationmark.circle")
-                    .font(.callout)
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .padding(.leading, Self.symbolInset)
+                Text(text)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: Self.trackWidth, alignment: .leading)
+                    .padding(.leading, Self.trackLeading)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(width: Self.width, alignment: .leading)
-        .animation(.snappy(duration: 0.15), value: volume)
+        .frame(width: Self.size.width, height: Self.size.height, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(loc("음량", "Volume", "音量"))
+        .accessibilityValue(accessibilityValue(volume: volume, muted: muted))
 
         #if compiler(>=6.2)
         if #available(macOS 26, *) {
-            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            content.glassEffect(.regular, in: Capsule())
         } else {
-            content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            content.background(.regularMaterial, in: Capsule())
         }
         #else
-        content.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        content.background(.regularMaterial, in: Capsule())
         #endif
     }
 
@@ -218,48 +249,76 @@ struct HUDView: View {
         if case .mute? = controller.activity { return !muted }
         return muted
     }
-}
 
-/// Speaker symbol and the level, with the limit marked like the panel's slider.
-private struct LevelRow: View {
-    let volume: Int
-    let muted: Bool
-    let limit: Int
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: Self.symbol(volume: volume, muted: muted))
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 22, alignment: .leading)
-                .contentTransition(.symbolEffect(.replace))
-            GeometryReader { proxy in
-                let width = proxy.size.width
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.15))
-                    Capsule().fill(Color.primary.opacity(muted ? 0.35 : 0.85))
-                        .frame(width: width * CGFloat(volume) / 100)
-                    if limit < 100 {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color.secondary)
-                            .frame(width: 2, height: 10)
-                            .offset(x: width * CGFloat(limit) / 100 - 1)
-                    }
-                }
-                .frame(maxHeight: .infinity)
-            }
-            .frame(height: 10)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(loc("음량", "Volume", "音量"))
-        .accessibilityValue(muted ? loc("음소거", "Muted", "ミュート") : "\(volume)")
+    private func accessibilityValue(volume: Int, muted: Bool) -> String {
+        if case let .problem(text) = state.content { return text }
+        return muted ? loc("음소거", "Muted", "ミュート") : "\(volume)"
     }
 
+    /// Heights measured on macOS 27: 22.5 pt with one or two waves, 24.5 with three
+    /// (the outer wave reaches past the body), 23.5 slashed.
+    static func symbolHeight(_ symbol: String) -> CGFloat {
+        switch symbol {
+        case "speaker.wave.3.fill": 24.5
+        case "speaker.slash.fill": 23.5
+        default: 22.5
+        }
+    }
+
+    /// One wave up to a third, two up to two thirds, three above, as the system's
+    /// indicator shows at 6 and 25, 50, and 81 %.
     static func symbol(volume: Int, muted: Bool) -> String {
-        if muted || volume == 0 { return "speaker.slash.fill" }
+        if muted { return "speaker.slash.fill" }
         return switch volume {
+        case 0: "speaker.fill"
         case ..<34: "speaker.wave.1.fill"
         case ..<67: "speaker.wave.2.fill"
         default: "speaker.wave.3.fill"
         }
+    }
+}
+
+/// 16 segments of 12.5 pt in a 214 × 4 pt track with rounded ends, filled in the
+/// primary color over 14 % of it, like the system's. The segment the volume falls in
+/// fills in part. The limit is a short tick, stronger when up was refused there.
+private struct SegmentedTrack: View {
+    static let segments = 16
+    static let height: CGFloat = 4
+    static let gap: CGFloat = 0.875
+
+    let volume: Int
+    let limit: Int
+    let atLimit: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let segment = (width - Self.gap * CGFloat(Self.segments - 1)) / CGFloat(Self.segments)
+            let filled = CGFloat(min(100, max(0, volume))) / 100 * CGFloat(Self.segments)
+            ZStack(alignment: .leading) {
+                HStack(spacing: Self.gap) {
+                    ForEach(0..<Self.segments, id: \.self) { index in
+                        let part = min(1, max(0, filled - CGFloat(index)))
+                        ZStack(alignment: .leading) {
+                            Rectangle().fill(Color.primary.opacity(0.14))
+                            Rectangle().fill(Color.primary)
+                                .frame(width: segment * part)
+                        }
+                    }
+                }
+                .frame(height: Self.height)
+                .clipShape(Capsule())
+                if limit < 100 {
+                    Capsule()
+                        .fill(Color.primary.opacity(atLimit ? 1 : 0.45))
+                        .frame(width: 1.5, height: atLimit ? 12 : 10)
+                        .offset(x: width * CGFloat(limit) / 100 - 0.75)
+                }
+            }
+            .frame(height: proxy.size.height)
+            .animation(.snappy(duration: 0.12), value: volume)
+            .animation(.snappy(duration: 0.15), value: atLimit)
+        }
+        .frame(height: 12)
     }
 }
