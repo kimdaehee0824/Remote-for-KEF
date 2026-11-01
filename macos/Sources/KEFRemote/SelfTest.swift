@@ -180,6 +180,11 @@ enum SelfTest {
             try expect(!speaker.muted && speaker.volume == 26, "volume up unmutes and raises, got \(speaker.muted) \(speaker.volume)")
             try await Capture(width: HUDView.size.width) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud.png")
             try await Capture(width: HUDView.size.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-dark.png")
+            state.hovering = true
+            try await Capture(width: HUDView.size.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-hover-dark.png")
+            state.hovering = false
+            state.content = .limit
+            try await Capture(width: HUDView.size.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "33-volume-hud-limit-dark.png")
             controller.setVolume(20)
             try await settle()
         }
