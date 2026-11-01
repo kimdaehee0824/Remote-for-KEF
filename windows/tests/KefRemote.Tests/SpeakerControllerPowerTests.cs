@@ -88,7 +88,7 @@ public class SpeakerControllerPowerTests
         Assert.True(c.IsWaking);
         Assert.False(c.CanPowerOn);
         Assert.False(c.CanControl);
-        Assert.Equal(TimeSpan.FromMilliseconds(250), c.NextPollDelay(false));
+        Assert.Equal(TimeSpan.FromMilliseconds(500), c.NextPollDelay(false));
         now += 250;
         await c.PollAsync();
         Assert.Equal(SpeakerPhase.On, c.Phase);
@@ -127,14 +127,98 @@ public class SpeakerControllerPowerTests
     }
 
     [Fact]
-    public async Task UnconfirmedPowerOnFailsClosed()
+    public async Task PowerOnWaitsForASlowWake()
+    {
+        // Past the 32 reads the old wait of about 10 s allowed.
+        var f = new FakeDriver { Power = PowerState.Standby, PowerLagReads = 34 };
+        var c = await Connected(f);
+        await c.PowerOnAsync();
+        Assert.Equal((SpeakerPhase.On, "usb", 1), (c.Phase, c.State.SourceId, f.Writes));
+        Assert.Null(c.Notice);
+    }
+
+    [Fact]
+    public async Task PowerOnReadsAtMostTwiceASecond()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, IgnoreWrites = true };
+        var delays = new List<int>();
+        var c = new SpeakerController { Clock = () => now, Delay = (ms, _) => { delays.Add(ms); return Task.CompletedTask; } };
+        f.Capabilities |= DriverCapabilities.Power;
+        Assert.True(await c.ConnectAsync(f));
+        await c.PowerOnAsync();
+        Assert.All(delays, ms => Assert.True(ms >= 500));
+        Assert.InRange(delays.Sum(), 28_000, 32_000);
+    }
+
+    [Fact]
+    public async Task StillWakingAfterTheWaitIsNotAFailure()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, WakingReadsAfterPowerOn = 1000 };
+        var c = await Connected(f);
+        await c.PowerOnAsync();
+        Assert.Equal(1, f.Writes);
+        Assert.True(c.State.Valid);
+        Assert.True(c.IsWaking);
+        Assert.Equal(SpeakerPhase.Standby, c.Phase);
+        Assert.NotNull(c.Notice);
+        Assert.False(c.NoticeIsError);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), c.NextPollDelay(false));
+        // The speaker gets there in the end: shown as on, and the notice goes.
+        f.WakingReads = 0;
+        now += 500;
+        await c.PollAsync();
+        Assert.Equal(SpeakerPhase.On, c.Phase);
+        Assert.Null(c.Notice);
+        Assert.Equal(1, f.Writes);
+    }
+
+    [Fact]
+    public async Task UnconfirmedPowerOnIsReportedAndClearedOnceOn()
     {
         var f = new FakeDriver { Power = PowerState.Standby, IgnoreWrites = true };
         var c = await Connected(f);
         await c.PowerOnAsync();
         Assert.Equal(1, f.Writes);
-        Assert.False(c.State.Valid);
+        // The reads worked: still connected, in standby, nothing else written.
+        Assert.True(c.State.Valid);
+        Assert.Equal(SpeakerPhase.Standby, c.Phase);
+        Assert.False(c.CanControl);
         Assert.True(c.NoticeIsError);
+        // Turned on later, with the remote or by the speaker itself.
+        f.Power = PowerState.On;
+        now += 4000;
+        await c.PollAsync();
+        Assert.Equal(SpeakerPhase.On, c.Phase);
+        Assert.Null(c.Notice);
+    }
+
+    [Fact]
+    public async Task LateWakeSaysTheInputWasNotSwitched()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, WakingReadsAfterPowerOn = 1000 };
+        var c = await Connected(f);
+        await c.PowerOnAsync("wifi");
+        Assert.Equal(1, f.Writes);
+        f.WakingReads = 0;
+        now += 500;
+        await c.PollAsync();
+        Assert.Equal((SpeakerPhase.On, "usb", 1), (c.Phase, c.State.SourceId, f.Writes));
+        Assert.NotNull(c.Notice);
+        Assert.False(c.NoticeIsError);
+    }
+
+    [Fact]
+    public async Task NewerNoticeIsKeptWhenTheLateWakeEnds()
+    {
+        var f = new FakeDriver { Power = PowerState.Standby, WakingReadsAfterPowerOn = 1000 };
+        var c = await Connected(f);
+        await c.PowerOnAsync();
+        c.ClearNotice();
+        f.WakingReads = 0;
+        now += 500;
+        await c.PollAsync();
+        Assert.Equal(SpeakerPhase.On, c.Phase);
+        Assert.Null(c.Notice);
     }
 
     [Fact]

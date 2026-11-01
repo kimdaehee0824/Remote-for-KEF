@@ -82,6 +82,7 @@ final class FakeDriver: SpeakerDriver {
 
     func setPower(_ on: Bool) async throws {
         writes.append(on ? "power=on" : "standby")
+        guard !ignoreWrites else { return }
         power = on ? .on : .standby
         failingReads = failuresAfterPower
         if on { wakingReads = wakingReadsAfterPower }
@@ -97,6 +98,11 @@ enum FakeError: Error { case offline }
 /// Set from observation's change handler.
 final class ChangeFlag: @unchecked Sendable {
     var value = false
+}
+
+/// Pauses the controller asked for, in order.
+final class SleepLog: @unchecked Sendable {
+    var durations: [Duration] = []
 }
 
 @MainActor
@@ -445,6 +451,85 @@ struct SpeakerControllerTests {
         await controller.refresh()
         #expect(controller.snapshot?.power == .on)
         #expect(!controller.isWaking)
+    }
+
+    @Test func wakeWaitsForASlowSpeaker() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        // Past the 20 reads the old wait of about 6 s allowed.
+        driver.wakingReadsAfterPower = 34
+        let controller = await connected(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["power=on"])
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.notice == nil)
+    }
+
+    @Test func wakeReadsAtMostTwiceASecond() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.ignoreWrites = true
+        let log = SleepLog()
+        let controller = SpeakerController(sleep: { log.durations.append($0) })
+        await controller.connect(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(log.durations.allSatisfy { $0 >= .milliseconds(500) })
+        let total = log.durations.reduce(Duration.zero, +)
+        #expect(total >= .seconds(28) && total <= .seconds(32))
+    }
+
+    @Test func stillWakingAfterTheWaitIsNotAFailure() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.wakingReadsAfterPower = 1000
+        let controller = await connected(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["power=on"])
+        #expect(controller.phase == .online)
+        #expect(controller.isWaking)
+        #expect(controller.notice != nil)
+        // The speaker gets there in the end: shown as on, and the notice goes.
+        driver.wakingReads = 0
+        await controller.refresh()
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.notice == nil)
+        #expect(driver.writes == ["power=on"])
+    }
+
+    @Test func unconfirmedWakeIsReportedAndClearedOnceOn() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.ignoreWrites = true
+        let controller = await connected(driver)
+        controller.wake()
+        await settle(controller)
+        #expect(driver.writes == ["power=on"])
+        #expect(controller.phase == .online)
+        #expect(controller.snapshot?.power == .standby)
+        #expect(controller.notice != nil)
+        // Turned on later, with the remote or by the speaker itself.
+        driver.power = .on
+        await controller.refresh()
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.notice == nil)
+    }
+
+    @Test func lateWakeSaysTheInputWasNotSwitched() async {
+        let driver = FakeDriver()
+        driver.power = .standby
+        driver.wakingReadsAfterPower = 1000
+        let controller = await connected(driver)
+        controller.wake(to: "wifi")
+        await settle(controller)
+        driver.wakingReads = 0
+        await controller.refresh()
+        #expect(controller.snapshot?.power == .on)
+        #expect(controller.snapshot?.sourceId == "usb")
+        #expect(controller.notice != nil)
+        #expect(driver.writes == ["power=on"])
     }
 
     @Test func powerChangesTolerateTransientReadErrors() async {

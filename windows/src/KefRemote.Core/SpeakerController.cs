@@ -36,7 +36,8 @@ public enum SpeakerOperation
 ///   This read, not the age of the last poll, is what makes a command safe, so a command is accepted
 ///   whenever the last poll succeeded within <see cref="StaleMilliseconds"/>.
 /// - Every write is confirmed by reading back. A mutation is never retried.
-/// - Any failure invalidates the state, which blocks commands until the next successful poll.
+/// - Any failure invalidates the state, which blocks commands until the next successful poll. A speaker that
+///   reads fine but is still not on when a power-on stops waiting is reported, not failed.
 /// - Disconnecting or invalidating bumps a generation counter so in-flight work is discarded.
 ///
 /// Not thread safe: call from a single (UI) synchronization context.
@@ -53,8 +54,12 @@ public sealed class SpeakerController : IDisposable
     public const int ApproachHoldMilliseconds = 100;
 
     const int VerifyAttempts = 4, VerifyDelayMs = 180;
-    const int PowerVerifyAttempts = 32, PowerVerifyDelayMs = 250;
-    const int WakingPollMs = 250;
+    // A read is five requests. Every half second at most, so a speaker that is busy changing power isn't flooded.
+    const int PowerVerifyAttempts = 16, PowerVerifyDelayMs = 500;
+    // Waking takes 2 to 4 s right after standby but can take far longer, e.g. after a long standby. A read every
+    // half second for the first 5 s so a usual wake shows at once, then one a second, about 30 s in all.
+    const int WakeQuickAttempts = 11, WakeAttempts = 36, WakeSlowDelayMs = 1000;
+    const int WakingPollMs = 500;
     static readonly int[] Backoff = [2000, 5000, 10000, 30000];
 
     public static string NotConnected => Loc.T("연결 전", "Not connected", "未接続");
@@ -68,6 +73,13 @@ public sealed class SpeakerController : IDisposable
     int appVolumeLimit = 30;
     CancellationTokenSource cts = new();
     PendingVolume? pendingVolume;
+    LateWake? lateWake;
+
+    /// <summary>
+    /// A power-on that stopped waiting before the speaker said it was on: the input it was asked for and the notice
+    /// shown then. The first read that finds the speaker on replaces that notice (see <see cref="FinishLateWake"/>).
+    /// </summary>
+    sealed record LateWake(string? Source, string Notice);
 
     sealed class PendingVolume
     {
@@ -239,6 +251,7 @@ public sealed class SpeakerController : IDisposable
         State = SpeakerState.Unknown;
         Busy = false;
         failures = 0;
+        lateWake = null;
         Operation = SpeakerOperation.None;
         OperationSource = null;
         Status = reason;
@@ -433,6 +446,10 @@ public sealed class SpeakerController : IDisposable
         Operation = SpeakerOperation.PowerOn;
         OperationSource = sourceId ?? LastActiveSource;
         Notice = null;
+        lateWake = null;
+        // Set from the power write until the speaker says it is on. The write can reach the speaker even when
+        // its reply is lost.
+        bool awaitingOn = false;
         Notify();
         try
         {
@@ -448,8 +465,9 @@ public sealed class SpeakerController : IDisposable
                         $"スタンバイ前の音量（{before.Volume}）が上限（{EffectiveLimit}）を超えているため、電源を入れませんでした。リモコンかKEF Connectで音量を下げてから入れてください"), limit: true);
                     return;
                 }
+                awaitingOn = true;
                 await Driver!.SetPowerAsync(true, cts.Token);
-                await Verify(token, s =>
+                bool confirmed = await TryVerify(token, s =>
                 {
                     // Show the input the speaker woke on as soon as it is back, before the power status follows.
                     if (sourceId == null && s.SourceId != null && s.SourceId != OperationSource)
@@ -458,7 +476,21 @@ public sealed class SpeakerController : IDisposable
                         Notify();
                     }
                     return s.Active && s.SourceId != null;
-                }, PowerVerifyAttempts, PowerVerifyDelayMs, tolerateTransient: true);
+                }, WakeAttempts, i => i < WakeQuickAttempts ? PowerVerifyDelayMs : WakeSlowDelayMs, tolerateTransient: true);
+                if (!confirmed)
+                {
+                    // Every read worked, the speaker just isn't on yet. Not a failure: the state stays valid, polling
+                    // shows the speaker as on once it says so and replaces this notice then.
+                    bool waking = IsWaking;
+                    string text = (waking
+                        ? Loc.T("스피커가 아직 켜지는 중입니다. 켜지면 바로 표시합니다", "The speaker is still turning on. It shows as on as soon as it is", "スピーカーはまだ起動中です。電源が入るとすぐに表示されます")
+                        : Loc.T("스피커가 아직 켜지지 않았습니다. 켜지면 바로 표시합니다", "The speaker hasn't turned on yet. It shows as on as soon as it is", "スピーカーの電源はまだ入っていません。入るとすぐに表示されます"))
+                        + (sourceId != null ? Loc.T(" 입력은 켜진 뒤 다시 고르세요", " Pick the input again once it's on", " 電源が入ってから入力をもう一度選んでください") : "");
+                    SetNotice(text, error: !waking);
+                    lateWake = new LateWake(sourceId, text);
+                    return;
+                }
+                awaitingOn = false;
                 Status = Connected;
             }
             var on = State;
@@ -482,6 +514,7 @@ public sealed class SpeakerController : IDisposable
             failures = Math.Max(failures, 1);
             Fail(Loc.T("조작 중지 (자동 재시도 없음): ", "Stopped (no automatic retry): ", "操作を停止しました（自動再試行なし）: ") + Describe(e));
             SetNotice(Loc.T("스피커를 켜지 못했습니다: ", "Couldn't turn the speaker on: ", "スピーカーの電源を入れられませんでした: ") + Describe(e), error: true);
+            if (awaitingOn) lateWake = new LateWake(sourceId, Notice!);
         }
         catch
         {
@@ -586,25 +619,33 @@ public sealed class SpeakerController : IDisposable
     Task Verify(int token, Func<SpeakerState, bool> predicate) =>
         Verify(token, predicate, VerifyAttempts, VerifyDelayMs, tolerateTransient: false);
 
+    async Task Verify(int token, Func<SpeakerState, bool> predicate, int attempts, int delayMs, bool tolerateTransient)
+    {
+        if (!await TryVerify(token, predicate, attempts, _ => delayMs, tolerateTransient))
+            throw new SpeakerException(Loc.T("스피커 반영을 확인하지 못했습니다", "Couldn't confirm the change on the speaker", "スピーカーへの反映を確認できませんでした"));
+    }
+
+    /// <summary>Reads until <paramref name="predicate"/> holds. False when the last read worked but it never held.</summary>
+    /// <param name="delayMs">Pause before each attempt after the first, by attempt index.</param>
     /// <param name="tolerateTransient">
     /// Power changes take seconds and the device may answer mid-transition. Read errors then count as
-    /// "not yet" instead of failing at once; the last attempt still fails.
+    /// "not yet" instead of failing at once; an error on the last attempt still throws.
     /// </param>
-    async Task Verify(int token, Func<SpeakerState, bool> predicate, int attempts, int delayMs, bool tolerateTransient)
+    async Task<bool> TryVerify(int token, Func<SpeakerState, bool> predicate, int attempts, Func<int, int> delayMs, bool tolerateTransient)
     {
         for (int i = 0; i < attempts; i++)
         {
-            if (i > 0) await Delay(delayMs, cts.Token);
+            if (i > 0) await Delay(delayMs(i), cts.Token);
             Check(token);
             try
             {
-                if (predicate(await ReadAsync(token))) return;
+                if (predicate(await ReadAsync(token))) return true;
             }
             catch (Exception e) when (tolerateTransient && i < attempts - 1 && e is SpeakerException or HttpRequestException or TaskCanceledException or TimeoutException && token == generation)
             {
             }
         }
-        throw new SpeakerException(Loc.T("스피커 반영을 확인하지 못했습니다", "Couldn't confirm the change on the speaker", "スピーカーへの反映を確認できませんでした"));
+        return false;
     }
 
     async Task<SpeakerState> ReadAsync(int token)
@@ -614,7 +655,26 @@ public sealed class SpeakerController : IDisposable
         if (s.Volume is < 0 or > 100) throw new SpeakerException(Loc.T("음량 응답 범위 오류", "Volume reply out of range", "音量の応答が範囲外です"));
         State = s with { Valid = true, SeenAt = Clock() };
         if (State.Active && State.SourceId != null) LastActiveSource = State.SourceId;
+        if (State.Active && lateWake is { } wake) FinishLateWake(wake);
         return State;
+    }
+
+    /// <summary>
+    /// The speaker came on after a power-on stopped waiting for it. The notice from then no longer holds: it goes,
+    /// or says the input it was asked for wasn't switched. Left alone if a newer notice replaced it.
+    /// </summary>
+    void FinishLateWake(LateWake wake)
+    {
+        lateWake = null;
+        if (Notice != wake.Notice) return;
+        if (wake.Source != null && wake.Source != State.SourceId)
+        {
+            SetNotice(Loc.T("켜졌습니다. 늦게 켜져서 입력은 바꾸지 않았습니다", "Turned on. It took a while, so the input wasn't switched", "電源が入りました。時間がかかったため、入力は切り替えていません"));
+            return;
+        }
+        Notice = null;
+        NoticeIsError = false;
+        NoticeIsLimit = false;
     }
 
     void Check(int token)

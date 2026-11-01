@@ -89,6 +89,7 @@ If `authMode` cannot be read, or the device answers 401/403, an HTML page, or an
 - A `usb` reading confirms the speaker's input only. It says nothing about the PC's audio output device.
 - `physicalSource` changes before `speakerStatus` in both directions (firmware 2.1.86, read every 150 ms). Waking, the input comes back about 1.8 s before `speakerStatus` turns `powerOn`. Turning off, `physicalSource` reads `standby` about 0.4 s before `speakerStatus` does. The apps therefore take `physicalSource` `standby` as standby, and an input while `speakerStatus` is still `standby` as waking: the input is shown at once and commands wait for `powerOn`.
 - With `settings:/kef/host/wakeUpSource` at `wakeup_default` the speaker woke on the input it had before standby.
+- Waking can take much longer than those 2 s: the speaker was seen coming on only after the apps had stopped waiting (about 10 s on Windows, 6 s on macOS). The apps now read every 0.5 s for the first 5 s, then every second, for about 30 s. A speaker that reads fine but is not on by then is reported as still turning on, not as a failure, and the message goes as soon as a later read finds it on.
 
 ## Not used
 

@@ -6,7 +6,8 @@ import Observation
 ///   unless the user asked for it.
 /// - Every write is preceded by a fresh read and followed by read-back
 ///   verification. A write is never retried; an unverified result drops the
-///   connection and reconnects read-only.
+///   connection and reconnects read-only. A speaker that reads fine but is
+///   still not on when a wake stops waiting is reported, not dropped.
 /// - A connection loss, an external input change or a settings change
 ///   invalidates queued commands. Nothing is replayed after reconnecting.
 /// - One failed status read keeps the last state and is retried a second
@@ -115,6 +116,10 @@ public final class SpeakerController {
     /// overwrite it.
     @ObservationIgnored private var stateEpoch = 0
     @ObservationIgnored private var queued: Job?
+    /// A wake that stopped waiting before the speaker said it was on: the
+    /// input it was asked for and the notice shown then. The first read that
+    /// finds the speaker on replaces that notice (see `finishLateWake`).
+    @ObservationIgnored private var lateWake: (source: String?, notice: String)?
     /// Failed connection attempts in a row.
     @ObservationIgnored private var failures = 0
     /// Failed status reads in a row while online.
@@ -127,10 +132,18 @@ public final class SpeakerController {
 
     let verifyAttempts = 4
     let verifyDelay: Duration = .milliseconds(180)
-    let powerVerifyAttempts = 20
-    let powerVerifyDelay: Duration = .milliseconds(250)
+    /// Every half second at most, so a speaker that is busy changing power
+    /// isn't flooded with reads.
+    let powerVerifyAttempts = 10
+    let powerVerifyDelay: Duration = .milliseconds(500)
+    /// Waking takes 2 to 4 s right after standby but can take far longer,
+    /// e.g. after a long standby. A read every half second for the first 5 s
+    /// so a usual wake shows at once, then one a second, about 30 s in all.
+    let wakeQuickAttempts = 11
+    let wakeAttempts = 36
+    let wakeSlowDelay: Duration = .seconds(1)
     /// Poll interval while waking, so the speaker shows as on soon after it says so.
-    let wakingPoll: Duration = .milliseconds(250)
+    let wakingPoll: Duration = .milliseconds(500)
     /// How long the overshoot value is held before the target is written.
     let approachHold: Duration = .milliseconds(100)
     /// A status read that fails once while online is retried before the
@@ -161,6 +174,7 @@ public final class SpeakerController {
 
     public func disconnect() {
         invalidate()
+        lateWake = nil
         driver = nil
         update(\.device, nil)
         update(\.snapshot, nil)
@@ -488,9 +502,26 @@ public final class SpeakerController {
                 throw Stop(message: loc("대기 전 음량(\(before.volume))이 상한(\(limit))보다 높아 켜지 않았습니다. 리모컨이나 KEF Connect로 음량을 낮춘 뒤 켜세요", "Not turned on: the volume before standby (\(before.volume)) is above the limit (\(limit)). Lower it with the remote or KEF Connect first", "スタンバイ前の音量（\(before.volume)）が上限（\(limit)）を超えているため、電源を入れませんでした。リモコンかKEF Connectで音量を下げてから入れてください"))
             }
             try check(token)
+            lateWake = nil
             try await driver.setPower(true)
-            on = try await verify(driver, token, attempts: powerVerifyAttempts, delay: powerVerifyDelay, tolerateTransient: true) {
-                $0.power == .on && $0.sourceId != nil
+            let quickAttempts = wakeQuickAttempts, quick = powerVerifyDelay, slow = wakeSlowDelay
+            do {
+                on = try await verify(
+                    driver, token, attempts: wakeAttempts, tolerateTransient: true,
+                    delays: { $0 < quickAttempts ? quick : slow }
+                ) { $0.power == .on && $0.sourceId != nil }
+            } catch is VerificationError {
+                // Every read worked, the speaker just isn't on yet. Not a
+                // failure: it stays online, polling shows it as on once it
+                // says so and replaces this notice then.
+                var message = isWaking
+                    ? loc("스피커가 아직 켜지는 중입니다. 켜지면 바로 표시합니다", "The speaker is still turning on. It shows as on as soon as it is", "スピーカーはまだ起動中です。電源が入るとすぐに表示されます")
+                    : loc("스피커가 아직 켜지지 않았습니다. 켜지면 바로 표시합니다", "The speaker hasn't turned on yet. It shows as on as soon as it is", "スピーカーの電源はまだ入っていません。入るとすぐに表示されます")
+                if target != nil {
+                    message += loc(" 입력은 켜진 뒤 다시 고르세요", " Pick the input again once it's on", " 電源が入ってから入力をもう一度選んでください")
+                }
+                lateWake = (target, message)
+                throw Stop(message: message)
             }
         }
         guard on.volume <= limit else {
@@ -513,15 +544,17 @@ public final class SpeakerController {
     }
 
     /// `tolerateTransient` lets reads fail while the device changes power
-    /// state; only the last attempt's error counts.
+    /// state; only the last attempt's error counts. `delays` gives the pause
+    /// before each attempt after the first, by attempt index.
     private func verify(
         _ driver: any SpeakerDriver, _ token: Int,
         attempts: Int? = nil, delay: Duration? = nil, tolerateTransient: Bool = false,
+        delays: ((Int) -> Duration)? = nil,
         _ predicate: (SpeakerSnapshot) -> Bool
     ) async throws -> SpeakerSnapshot {
         let attempts = attempts ?? verifyAttempts
         for attempt in 0..<attempts {
-            if attempt > 0 { try await sleep(delay ?? verifyDelay) }
+            if attempt > 0 { try await sleep(delays?(attempt) ?? delay ?? verifyDelay) }
             try check(token)
             do {
                 let state = try await read(driver, token)
@@ -540,6 +573,20 @@ public final class SpeakerController {
     private func apply(_ state: SpeakerSnapshot) {
         update(\.snapshot, state)
         if state.power == .on, let source = state.sourceId { update(\.lastActiveSource, source) }
+        if state.power == .on, let wake = lateWake { finishLateWake(wake, state) }
+    }
+
+    /// The speaker came on after a wake stopped waiting for it. The notice
+    /// from then no longer holds: it goes, or says the input it was asked for
+    /// wasn't switched. Left alone if a newer notice replaced it.
+    private func finishLateWake(_ wake: (source: String?, notice: String), _ state: SpeakerSnapshot) {
+        lateWake = nil
+        guard notice == wake.notice else { return }
+        if let source = wake.source, source != state.sourceId {
+            notice = loc("켜졌습니다. 늦게 켜져서 입력은 바꾸지 않았습니다", "Turned on. It took a while, so the input wasn't switched", "電源が入りました。時間がかかったため、入力は切り替えていません")
+        } else {
+            notice = nil
+        }
     }
 
     /// Observation reports every assignment, equal or not. Polls read the same
