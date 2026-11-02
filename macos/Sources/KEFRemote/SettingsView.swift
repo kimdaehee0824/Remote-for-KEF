@@ -217,8 +217,9 @@ struct SpeakerSettings: View {
                 }
                 .frame(width: 500, height: 640)
             } else {
+                // Tall enough for a speaker's sheet, which can't reach past the window.
                 SpeakerListForm(shown: $shown, adding: $adding)
-                    .frame(width: 500, height: 420)
+                    .frame(width: 500, height: 540)
             }
         }
         .sheet(item: $shown) { slot in
@@ -302,7 +303,7 @@ struct SpeakerSheet: View {
             }
             .padding(12)
         }
-        .frame(width: 500, height: 620)
+        .frame(width: 500, height: 520)
     }
 }
 
