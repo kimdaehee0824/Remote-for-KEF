@@ -7,6 +7,7 @@ A walk through each screen of Remote for KEF. The numbers in each picture match 
 - [Getting started](#getting-started)
 - [Windows](#windows)
 - [macOS](#macos)
+- [Several speakers](#several-speakers)
 - [Volume limit and accurate volume](#volume-limit-and-accurate-volume)
 - [Speaker drawings](#speaker-drawings)
 - [Troubleshooting](#troubleshooting)
@@ -21,8 +22,10 @@ A walk through each screen of Remote for KEF. The numbers in each picture match 
 ### Connect the speaker
 
 1. Find the speaker's IP address, in the speaker info in the KEF Connect app or on your router's admin page. Reserving a fixed IP for the speaker on the router keeps the address from changing.
-2. Enter the IP address on the **Speaker** page in Settings and connect. See it for [Windows](#settings-speaker) and [macOS](#settings-speaker-1).
+2. Enter the IP address in the speaker settings and connect. See them for [Windows](#settings-speakers) and [macOS](#settings-speaker).
 3. Enter a password only if you set a device password in KEF Connect. It isn't your KEF account password.
+
+Speakers in other rooms are added on the same page. See [Several speakers](#several-speakers).
 
 Connecting only reads the speaker's status. It never changes the volume or the input.
 
@@ -36,7 +39,7 @@ Select the icon in the notification area of the taskbar. If you don't see it, lo
 
 <p><img src="images/guide/W1-en.png" width="362" alt="Windows flyout"></p>
 
-1. **Speaker name and model**
+1. **Speaker name and model**: with two or more speakers, a chevron sits next to the name. Select it to open the list of speakers to switch to.
 2. **Power**: turning it off puts the speaker in standby.
 3. **Volume**: the value the speaker reports back.
 4. **Limit**: the limit in effect, and whether it comes from the app setting or the KEF device setting.
@@ -81,13 +84,15 @@ From any app, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> cha
 2. **Volume bar**: the tick is the limit. The mouse wheel over the indicator changes the volume too.
 3. **Current volume**
 
+With two or more speakers, the line under the bar names the speaker.
+
 If another app uses the same combination, **Check shortcuts** shows at the bottom of the flyout. VS Code, JetBrains IDEs, Visual Studio and Word use some of these too, so change them in **Settings → Shortcuts** if they clash.
 
 ### Settings: General
 
 <p><img src="images/guide/W5-en.png" width="760" alt="General page in Settings"></p>
 
-1. **Menu**: General, Speaker, Volume, Shortcuts and About.
+1. **Menu**: General, Speakers, Shortcuts and About.
 2. **Start with Windows**: starts quietly in the notification area when you sign in.
 3. **Keep the icon visible**: Windows 11 hides new icons under the ^. Select **Open taskbar settings** and turn on Remote for KEF to reach it in one click.
 
@@ -95,9 +100,11 @@ If another app uses the same combination, **Check shortcuts** shows at the botto
 
 **Show what's playing**, under **Flyout** on the same page: turns the card above the flyout on or off.
 
-### Settings: Speaker
+### Settings: Speakers
 
-<p><img src="images/guide/W6-en.png" width="760" alt="Speaker page in Settings"></p>
+This is the page with one speaker. With two or more, a list comes first, and selecting a row opens the same page for that speaker ([Several speakers](#several-speakers)).
+
+<p><img src="images/guide/W6-en.png" width="760" alt="Speakers page in Settings"></p>
 
 1. **IP address**
 2. **Device web page password**: leave it empty if you haven't set one. It is stored encrypted for your Windows user.
@@ -106,14 +113,14 @@ If another app uses the same combination, **Check shortcuts** shows at the botto
 5. **Speaker finish**: speakers don't report their color, so pick it here. The list shows only your model's finishes, and the speaker in the flyout takes the one you pick. Without one it uses the app's default, LS60 Royal Blue. The drawings for each model are [below](#speaker-drawings).
 6. **Firmware**
 
-### Settings: Volume
+**Volume**, further down the same page, applies to this speaker only.
 
-<p><img src="images/guide/W7-en.png" width="760" alt="Volume page in Settings"></p>
+- **App volume limit**: the highest volume this app raises to.
+- **KEF device maximum volume**: the value set in KEF Connect.
+- **Limit in effect**: the lower of the two. It is the tick on the flyout slider.
+- **Accurate volume**: **?** shows a short explanation. More [below](#accurate-volume).
 
-1. **App volume limit**: the highest volume this app raises to.
-2. **KEF device maximum volume**: the value set in KEF Connect.
-3. **Limit in effect**: the lower of the two. It is the tick on the flyout slider.
-4. **Accurate volume**: **?** shows a short explanation. More [below](#accurate-volume).
+Under it, **Remove this speaker** removes it from the list on this PC only and changes nothing on the speaker. **Add a speaker** at the top of the page adds one in another room.
 
 ### Settings: Shortcuts
 
@@ -121,9 +128,11 @@ If another app uses the same combination, **Check shortcuts** shows at the botto
 
 1. **Volume up**, **Volume down**: select a box and press the new combination. <kbd>Esc</kbd> cancels, <kbd>Backspace</kbd> turns it off.
 2. **Mute / unmute**: the picture shows what happens when another app already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>. If you see red text like this, choose another combination.
-3. **Restore defaults**: puts the three shortcuts back to their original combinations.
+3. **Restore defaults**: puts the shortcuts back to their original combinations.
 4. **Volume per press**: 1, 2, 3 or 5, or **Perceived loudness**. It applies to the shortcuts and to the mouse wheel on the indicator.
 5. **Show in the bottom-right corner when the volume changes**: errors such as connection problems or the limit still show when this is off.
+
+**Switch to the next speaker**, on the same page, is off by default. Give it a combination to move the selection down the list when you have two or more speakers.
 
 **Perceived loudness** follows measured steps (12, 15, 19, 22, 25, 29 …) so the loudness, not the number, rises evenly. Above 65 it moves by 4; below 12, raising goes to 12 and lowering goes to 0.
 
@@ -146,7 +155,7 @@ When the connection is lost, the icon changes shape once more.
 
 <p><img src="images/guide/M1-en.png" width="368" alt="macOS panel"></p>
 
-1. **Speaker name and model**
+1. **Speaker name and model**: with two or more speakers, a chevron sits next to the name. Click it to open the list of speakers beside the panel.
 2. **Power**: turning it off puts the speaker in standby.
 3. **Volume**: the value the speaker reports back.
 4. **Mute**: click the speaker icon to mute or unmute.
@@ -175,13 +184,13 @@ When the speaker plays over Wi-Fi or Bluetooth, a tile with the track shows abov
 
 ### Shortcuts and the volume indicator
 
-From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>M</kbd> mutes or unmutes. Holding the key keeps changing the volume. The volume indicator shows briefly at the top right of the screen, under the menu bar, made of the same glass as the system's own. Its tick is the limit, and the number is next to the menu bar icon. With the pointer over it, the bar turns into a slider you can drag, and the indicator stays until the pointer leaves. The shortcuts don't need Accessibility access. As with the Mac's own volume keys, volume up while muted unmutes.
+From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>M</kbd> mutes or unmutes. Holding the key keeps changing the volume. The volume indicator shows briefly at the top right of the screen, under the menu bar, made of the same glass as the system's own. Its tick is the limit, and the number is next to the menu bar icon. With the pointer over it, the bar turns into a slider you can drag, and the indicator stays until the pointer leaves. The shortcuts don't need Accessibility access. As with the Mac's own volume keys, volume up while muted unmutes. With two or more speakers, the icon on the left of the indicator becomes that speaker's model, so you can tell which one it is.
 
 ### Settings: General
 
-<p><img src="images/guide/M5-en.png" width="548" alt="General tab in Settings"></p>
+<p><img src="images/guide/M5-en.png" width="520" alt="General tab in Settings"></p>
 
-1. **Tabs**: General, Speaker, Volume and Shortcuts
+1. **Tabs**: General, Speaker and Shortcuts
 2. **Open at login**: may need approval in System Settings the first time.
 3. **Show the volume in the menu bar**: on by default. Off leaves only the icon.
 
@@ -191,7 +200,9 @@ From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>�
 
 ### Settings: Speaker
 
-<p><img src="images/guide/M6-en.png" width="548" alt="Speaker tab in Settings"></p>
+This is the tab with one speaker. With two or more, it becomes a list, and the ⓘ on a row opens the same settings for that speaker ([Several speakers](#several-speakers)).
+
+<p><img src="images/guide/M6-en.png" width="520" alt="Speaker tab in Settings"></p>
 
 1. **IP address**
 2. **Web page password**: leave it empty if you haven't set one. It is stored in the keychain.
@@ -201,27 +212,52 @@ From any app, <kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>↑</kbd> / <kbd>�
 6. **Firmware**
 7. **Verification**: whether the model has been tested on a real speaker.
 
-### Settings: Volume
+Scroll down for the volume settings, which apply to this speaker only.
 
-<p><img src="images/guide/M7-en.png" width="548" alt="Volume tab in Settings"></p>
+<p><img src="images/guide/M7-en.png" width="520" alt="Lower part of the Speaker tab"></p>
 
 1. **App limit**: set with the slider.
 2. **KEF device maximum**
 3. **Limit in effect**
 4. **Accurate volume**: the ⓘ next to it shows a short explanation.
+5. **Remove Speaker…**: removes it from the list on this Mac only and changes nothing on the speaker.
+6. **Add Speaker…**: adds a speaker in another room.
 
 ### Settings: Shortcuts
 
 - **Volume up**, **Volume down**, **Mute on/off**: click the box and press the new combination. <kbd>esc</kbd> cancels, <kbd>delete</kbd> turns it off. Except for function keys (F1 to F20), a combination needs <kbd>⌃</kbd>, <kbd>⌥</kbd> or <kbd>⌘</kbd>.
-- **Restore Defaults**: puts the three shortcuts back to their original combinations.
+- **Switch to the next speaker**: off by default. Give it a combination to move the selection down the list when you have two or more speakers.
+- **Restore Defaults**: puts the shortcuts back to their original combinations.
 - **Volume per press**: 1, 2, 3 or 5, or **Perceived loudness**, as on Windows.
 - **Show the volume on screen**: connection problems and the limit still show when this is off.
+
+## Several speakers
+
+Add the KEF speakers in each room and pick the one to control. With a single speaker, everything looks as before. Add a speaker by its IP address with **Add a speaker** (Windows) or **Add Speaker…** (macOS) in the speaker settings.
+
+<p><img src="images/guide/M8-en.png" width="652" alt="Speaker list open beside the panel"></p>
+
+1. **Speaker name**: opens the list beside it, and the chevron turns around. Select it again to close the list. The Windows flyout works the same way.
+2. **Speaker row**: switches to that speaker. Its state, such as the volume, standby or not reachable, shows under the name. The app keeps the last speaker you picked when it starts again.
+3. **Power switch**: turns that speaker on or off without picking it.
+4. **Turn All Off**: puts every speaker that is on into standby.
+5. **Speaker Settings…**: opens the speaker settings. On Windows it's **Manage speakers**.
+
+- **What follows the selected speaker**: the flyout and the panel, the notification area and menu bar icons, the shortcuts and the volume indicator. The indicator also shows which speaker it is: its name on Windows, its model on macOS.
+- **Set per speaker**: address, password, finish, chosen model, app limit and accurate volume. Shortcuts, volume per press, the indicator, what's playing, starting at sign-in and updates are the same for all speakers.
+- **Switch to the next speaker**: give it a combination under **Shortcuts** in Settings to move the selection down the list without opening it. Off by default.
+
+Only the selected speaker stays connected and reports its changes at once. The others are read every few seconds only while the list is open, so more speakers barely add any network traffic.
+
+<p><img src="images/guide/M9-en.png" width="520" alt="Speaker list in Settings"></p>
+
+With two or more speakers, the speaker settings become a list, with each speaker's drawing, name, model and whether it is selected. On Windows select a row, on macOS click its ⓘ, to open that speaker's settings. They are the same as with one speaker on [Windows](#settings-speakers) and [macOS](#settings-speaker).
 
 ## Volume limit and accurate volume
 
 ### Volume limit
 
-There are two limits, and the lower one applies: the **app limit** set in this app, and the **KEF device maximum** set in KEF Connect. Lowering always works, and volume changed with the remote or KEF Connect isn't limited. If the volume is already above the limit, you can only lower it.
+There are two limits, both per speaker, and the lower one applies: the **app limit** set in this app, and the **KEF device maximum** set in KEF Connect. Lowering always works, and volume changed with the remote or KEF Connect isn't limited. If the volume is already above the limit, you can only lower it.
 
 ### Accurate volume
 
@@ -240,7 +276,7 @@ The speaker at the top of the flyout and the panel takes the shape of your model
 
 - If you pick a finish, the app draws the model that finish belongs to, in that color.
 - If you don't, it draws the detected model in the app's default color, LS60 Royal Blue.
-- If the app doesn't know your model, you can choose the one to draw: **Speaker model** on the **Speaker** page of Settings on Windows, **Choose Model** on the **Speaker** tab of Settings on macOS. Until then the drawing is the one from the app icon.
+- If the app doesn't know your model, you can choose the one to draw: **Speaker model** on the **Speakers** page of Settings on Windows, **Choose Model** on the **Speaker** tab of Settings on macOS. Until then the drawing is the one from the app icon.
 - The finish list shows only your model's finishes, or only the app default if the model is unknown. The model choice affects the drawing and the finish list only, not the inputs.
 
 ## Troubleshooting

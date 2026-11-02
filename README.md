@@ -16,6 +16,7 @@
 **Remote for KEF** controls your KEF wireless speaker from the Windows tray and the Mac menu bar, directly over the local network. No more reaching for your phone to switch inputs or nudge the volume.
 
 - Power, inputs and volume in steps of 1
+- Several speakers, one per room, picked from a list
 - A volume limit, and accurate volume so the same number always sounds the same
 - Shortcuts and an on-screen volume display
 - What is playing, with playback buttons
