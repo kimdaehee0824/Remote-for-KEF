@@ -168,6 +168,8 @@ struct KefProtocolVectorTests {
         let unknown = KefModelProfile.resolve(modelName: "SP9999", releaseText: "NEWMODEL_V0100")
         #expect(unknown.displayName == "KEF NEWMODEL" && !unknown.verified)
         #expect(unknown.sourceIds == KefModelProfile.defaultSources)
+        #expect(KefModels.sources(of: "LS60 Wireless").map(\.id) == ["wifi", "bluetooth", "tv", "optical", "coaxial", "analog"])
+        #expect(KefModels.sources(of: "KEF NEWMODEL").map(\.id) == KefModelProfile.defaultSources)
     }
 }
 

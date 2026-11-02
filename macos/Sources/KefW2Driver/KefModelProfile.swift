@@ -82,4 +82,11 @@ public enum KefModels {
         if let picked, names.contains(picked) { return picked }
         return reported
     }
+
+    /// The inputs the app offers for a model by its display name, as the driver would after connecting:
+    /// the model's own list, or every input for a model the table doesn't know.
+    public static func sources(of displayName: String) -> [SourceOption] {
+        KefModelProfile.known.first { $0.displayName == displayName }?.sources
+            ?? KefModelProfile.defaultSources.map { SourceOption(id: $0, name: KefModelProfile.label(for: $0)) }
+    }
 }

@@ -501,19 +501,10 @@ final class DemoDriver: SpeakerDriver {
 
     func connect() async throws -> DeviceInfo {
         try online()
-        let known = KefModels.names.contains(speaker.model)
-        var sources = [
-            SourceOption(id: "usb", name: "USB-C / PC"), SourceOption(id: "wifi", name: "Wi-Fi"),
-            SourceOption(id: "bluetooth", name: "Bluetooth"), SourceOption(id: "tv", name: "TV (HDMI eARC)"),
-            SourceOption(id: "optical", name: "Optical"),
-        ]
-        if !known {
-            sources += [SourceOption(id: "coaxial", name: "Coaxial"), SourceOption(id: "analog", name: "Analog")]
-        }
         return DeviceInfo(
             name: speaker.name, model: speaker.model, firmware: speaker.firmware,
             capabilities: [.volume, .mute, .source, .power, .playback],
-            sources: sources,
+            sources: KefModels.sources(of: speaker.model),
             deviceVolumeLimit: nil, verifiedModel: speaker.model == "LSX II LT"
         )
     }
