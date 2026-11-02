@@ -380,9 +380,11 @@ sealed class SettingsView
                 name.Text = slot.Name;
                 var c = slot.Controller;
                 bool reachable = c.Phase is SpeakerPhase.On or SpeakerPhase.Standby;
-                string model = c.Device?.Model ?? slot.Entry.Model ?? slot.Entry.Host;
+                // The model, else the address unless the address is already the name.
+                string model = c.Device?.Model ?? slot.Entry.Model ?? (slot.Name == slot.Entry.Host ? "" : slot.Entry.Host);
                 detail.Text = slot.Unreachable && !reachable ? SpeakerPresentation.NotReachable : model;
-                detail.Style = Ui.Style(slot.Unreachable && !reachable ? "KefCriticalText" : "KefSecondaryText");
+                detail.Visibility = detail.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                detail.Style = Ui.Style("KefSecondaryText");
                 detail.FontSize = 12;
                 state.Text = slot == host.Selected ? Loc.T("선택됨", "Selected", "選択中") : "";
                 icon.Content = Ui.AppGlyph(32, slot.Finish, slot.ShownModel);

@@ -247,10 +247,13 @@ private struct SpeakerListForm: View {
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(slot.name).lineLimit(1)
-                            Text(slot.controller.device?.model ?? slot.entry.model ?? slot.entry.host)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            // The model, else the address unless the address is already the name.
+                            if let detail = slot.controller.device?.model ?? slot.entry.model ?? (slot.name == slot.entry.host ? nil : slot.entry.host) {
+                                Text(detail)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
                         Spacer(minLength: 8)
                         if slot.id == model.selected?.id {
