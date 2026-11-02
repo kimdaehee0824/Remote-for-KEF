@@ -9,22 +9,99 @@ import SwiftUI
 enum SettingsTab: Hashable {
     case general
     case speaker
-    case volume
     case shortcuts
 }
 
-/// App-level state: saved settings, the speaker controller and system hooks.
+/// One registered speaker while the app runs: its saved entry, its own controller and how reaching it went.
+/// Only the selected speaker listens for change reports and is polled; the others are read while the speaker list
+/// is open, so a house full of speakers costs no more network traffic than one.
+@MainActor
+@Observable
+final class SpeakerSlot: Identifiable {
+    fileprivate(set) var entry: SpeakerEntry
+    let controller = SpeakerController()
+    /// The last attempt to reach it failed, as opposed to not tried yet.
+    fileprivate(set) var unreachable = false
+
+    init(_ entry: SpeakerEntry) {
+        self.entry = entry
+        id = entry.id
+        controller.listensForChanges = false
+        controller.playbackEnabled = false
+        controller.appLimit = entry.appLimit
+        controller.approachFromAbove = entry.approachFromAbove
+    }
+
+    /// The entry's id, which never changes. Not isolated, as `Identifiable` asks.
+    nonisolated let id: String
+
+    /// What the speaker calls itself, else the last name it reported, else its address.
+    var name: String { controller.device?.name.nonEmpty ?? SpeakerList.displayName(entry) }
+
+    /// The model the speaker is drawn as and whose finishes are listed (`KefModels.shown`).
+    var shownModel: String? { KefModels.shown(reported: controller.device?.model ?? entry.model, picked: entry.pickedModel) }
+
+    /// The picked finish, if it is one of the shown model's.
+    var finish: KefFinish? { KefFinish.find(entry.finish, model: shownModel) }
+
+    /// The line under its name in the speaker list: the volume while it is on, else its state.
+    var listStatus: String {
+        let c = controller
+        switch c.activity {
+        case .powerOn?: return loc("켜는 중", "Turning on", "電源を入れています")
+        case .powerOff?: return loc("끄는 중", "Turning off", "電源を切っています")
+        default: break
+        }
+        if c.isWaking { return loc("켜는 중", "Turning on", "電源を入れています") }
+        switch c.phase {
+        case .online:
+            guard let state = c.snapshot else { return loc("확인하는 중", "Checking", "確認中") }
+            if state.power == .standby { return loc("대기", "Standby", "スタンバイ") }
+            return state.muted ? loc("음소거", "Muted", "ミュート") : loc("음량 \(state.volume)", "Volume \(state.volume)", "音量 \(state.volume)")
+        case .offline:
+            return Self.notConnected
+        case .idle, .connecting:
+            return unreachable ? Self.notConnected : loc("확인하는 중", "Checking", "確認中")
+        }
+    }
+
+    static var notConnected: String { loc("연결 안 됨", "Not connected", "未接続") }
+
+    var isOn: Bool { controller.isOnline && controller.snapshot?.power == .on }
+}
+
+/// App-level state: saved settings, the registered speakers and system hooks.
+/// The panel, menu bar, shortcuts and volume indicator work on the selected speaker.
 @MainActor
 @Observable
 final class AppModel {
     static let shared = Demo.isOn
-        ? AppModel(defaults: UserDefaults(suiteName: Demo.suite) ?? .standard, usesKeychain: false)
+        ? AppModel(defaults: forgettingSpeakers(UserDefaults(suiteName: Demo.suite) ?? .standard), usesKeychain: false)
         : AppModel()
 
-    let controller = SpeakerController()
+    /// `--demo` adds its speakers each time it starts, so none are kept from the last run.
+    private static func forgettingSpeakers(_ defaults: UserDefaults) -> UserDefaults {
+        for key in [Keys.speakers, Keys.selectedSpeaker, Keys.host] { defaults.removeObject(forKey: key) }
+        return defaults
+    }
 
-    private(set) var host: String
-    private(set) var hasPassword: Bool
+    /// The registered speakers, in the order they were added.
+    private(set) var speakers: [SpeakerSlot] = []
+    private(set) var selectedID: String?
+    /// Stands in while no speaker is registered, so the surfaces always have a controller to show.
+    @ObservationIgnored private let none = SpeakerController()
+
+    var selected: SpeakerSlot? { speakers.first { $0.id == selectedID } ?? speakers.first }
+
+    /// The selected speaker's controller.
+    var controller: SpeakerController { selected?.controller ?? none }
+
+    /// More than one speaker: the surfaces say which one they work on and offer to switch.
+    var hasSeveral: Bool { speakers.count > 1 }
+    /// The speaker list beside the panel is open. The other speakers are read every `listRefresh` meanwhile.
+    var speakerListOpen = false
+    static let listRefresh: Duration = .seconds(3)
+
     var showsVolumeInMenuBar: Bool {
         didSet { defaults.set(showsVolumeInMenuBar, forKey: Keys.showVolume) }
     }
@@ -34,26 +111,6 @@ final class AppModel {
             controller.playbackEnabled = showsNowPlaying
             defaults.set(showsNowPlaying, forKey: Keys.showNowPlaying)
         }
-    }
-    var approachFromAbove: Bool {
-        didSet {
-            controller.approachFromAbove = approachFromAbove
-            defaults.set(approachFromAbove, forKey: Keys.approachFromAbove)
-        }
-    }
-    /// Finish the speaker icon is drawn in (KefFinish.id), or nil for the app's own look.
-    var speakerFinishID: String? {
-        didSet { defaults.set(speakerFinishID, forKey: Keys.speakerFinish) }
-    }
-    /// Model picked per speaker address, for a speaker that reports a model the app does not know.
-    /// Only the drawing and the finish list use it.
-    private var speakerModels: [String: String] {
-        didSet { defaults.set(speakerModels, forKey: Keys.speakerModels) }
-    }
-    /// Last input seen per speaker address. A speaker woken with the power switch doesn't say
-    /// which input it came back on, so the panel shows this one, also after the app restarts.
-    @ObservationIgnored private var lastInputs: [String: String] {
-        didSet { defaults.set(lastInputs, forKey: Keys.lastInputs) }
     }
     /// Global shortcuts. An action that isn't in here is off.
     private(set) var shortcuts: [ShortcutAction: Shortcut]
@@ -76,23 +133,31 @@ final class AppModel {
     private(set) var loginItemStatus: SMAppService.Status = .notRegistered
     private(set) var loginItemError: String?
 
+    /// Builds the driver for a speaker. The self-test and `--demo` put simulated speakers here.
+    @ObservationIgnored var makeDriver: (@MainActor (SpeakerEntry, String) throws -> any SpeakerDriver)?
+
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let usesKeychain: Bool
     @ObservationIgnored private var started = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
-    @ObservationIgnored private var deviceReadAt: ContinuousClock.Instant?
+    @ObservationIgnored private var deviceReadAt: [String: ContinuousClock.Instant] = [:]
     @ObservationIgnored private var volumeKeys: VolumeKeys?
     @ObservationIgnored private var recordingMonitor: Any?
+    @ObservationIgnored private var panelVisible = false
 
     private enum Keys {
+        static let speakers = "speakers"
+        static let selectedSpeaker = "selectedSpeaker"
+        // 0.4 and earlier: one speaker. Read once to make the first entry, and left as they are.
         static let host = "speakerHost"
         static let appLimit = "appVolumeLimit"
-        static let showVolume = "showVolumeInMenuBar"
-        static let showNowPlaying = "showNowPlaying"
         static let approachFromAbove = "approachFromAbove"
         static let speakerFinish = "speakerFinish"
         static let speakerModels = "speakerModels"
         static let lastInputs = "lastInputs"
+
+        static let showVolume = "showVolumeInMenuBar"
+        static let showNowPlaying = "showNowPlaying"
         static let shortcuts = "shortcuts"
         static let volumeKeyStep = "volumeKeyStep"
         static let showVolumeHUD = "showVolumeHUD"
@@ -102,28 +167,65 @@ final class AppModel {
     init(defaults: UserDefaults = .standard, usesKeychain: Bool = true) {
         self.defaults = defaults
         self.usesKeychain = usesKeychain
-        host = defaults.string(forKey: Keys.host) ?? ""
-        hasPassword = usesKeychain && KeychainStore.password() != nil
         showsVolumeInMenuBar = defaults.object(forKey: Keys.showVolume) as? Bool ?? true
         showsNowPlaying = defaults.object(forKey: Keys.showNowPlaying) as? Bool ?? true
-        approachFromAbove = defaults.bool(forKey: Keys.approachFromAbove)
-        speakerFinishID = defaults.string(forKey: Keys.speakerFinish)
-        speakerModels = defaults.dictionary(forKey: Keys.speakerModels) as? [String: String] ?? [:]
-        lastInputs = defaults.dictionary(forKey: Keys.lastInputs) as? [String: String] ?? [:]
         shortcuts = Self.loadShortcuts(defaults.data(forKey: Keys.shortcuts))
         let step = defaults.object(forKey: Keys.volumeKeyStep) as? Int ?? 1
         volumeKeyStep = VolumeSteps.choices.contains(step) ? step : 1
         showsVolumeHUD = defaults.object(forKey: Keys.showVolumeHUD) as? Bool ?? true
-        controller.approachFromAbove = approachFromAbove
-        controller.playbackEnabled = showsNowPlaying
-        controller.lastActiveSourceChanged = { [weak self] source in
-            guard let self, !self.host.isEmpty else { return }
-            self.lastInputs[self.host] = source
+
+        let entries: [SpeakerEntry]
+        if let data = defaults.data(forKey: Keys.speakers), let saved = try? JSONDecoder().decode([SpeakerEntry].self, from: data) {
+            entries = saved
+        } else {
+            entries = SpeakerList.migrated(from: Self.legacySpeaker(defaults))
         }
-        if defaults.object(forKey: Keys.appLimit) != nil {
-            controller.appLimit = Self.clampLimit(defaults.integer(forKey: Keys.appLimit))
+        speakers = entries.map(makeSlot)
+        selectedID = SpeakerList.selected(entries, id: defaults.string(forKey: Keys.selectedSpeaker))?.id
+        saveSpeakers()
+        if let selected {
+            selected.controller.listensForChanges = true
+            selected.controller.playbackEnabled = showsNowPlaying
         }
         refreshLoginItemStatus()
+    }
+
+    private static func legacySpeaker(_ defaults: UserDefaults) -> LegacySpeaker? {
+        guard let host = defaults.string(forKey: Keys.host) else { return nil }
+        return LegacySpeaker(
+            host: host,
+            appLimit: defaults.object(forKey: Keys.appLimit) != nil ? defaults.integer(forKey: Keys.appLimit) : nil,
+            approachFromAbove: defaults.bool(forKey: Keys.approachFromAbove),
+            finish: defaults.string(forKey: Keys.speakerFinish),
+            pickedModel: (defaults.dictionary(forKey: Keys.speakerModels) as? [String: String])?[host],
+            lastInput: (defaults.dictionary(forKey: Keys.lastInputs) as? [String: String])?[host]
+        )
+    }
+
+    private func makeSlot(_ entry: SpeakerEntry) -> SpeakerSlot {
+        let slot = SpeakerSlot(entry)
+        slot.controller.lastActiveSourceChanged = { [weak self, weak slot] source in
+            guard let self, let slot, slot.entry.lastInput != source else { return }
+            self.update(slot) { $0.lastInput = source }
+        }
+        return slot
+    }
+
+    private func saveSpeakers() {
+        defaults.set(try? JSONEncoder().encode(speakers.map(\.entry)), forKey: Keys.speakers)
+        defaults.set(selectedID, forKey: Keys.selectedSpeaker)
+    }
+
+    /// Changes a speaker's saved entry and applies what the controller uses.
+    func update(_ slot: SpeakerSlot, _ change: (inout SpeakerEntry) -> Void) {
+        var entry = slot.entry
+        change(&entry)
+        entry.appLimit = SpeakerList.clampLimit(entry.appLimit)
+        guard entry != slot.entry else { return }
+        slot.entry = entry
+        slot.controller.appLimit = entry.appLimit
+        slot.controller.approachFromAbove = entry.approachFromAbove
+        saveSpeakers()
     }
 
     func start() {
@@ -132,81 +234,239 @@ final class AppModel {
         observeSleep()
         volumeKeys = VolumeKeys(model: self)
         applyShortcuts()
-        controller.startMonitoring()
-        if !host.isEmpty { connect() }
+        if let selected {
+            selected.controller.startMonitoring()
+            connect(selected)
+        }
     }
 
-    /// The model picked in settings for this speaker address, or nil.
+    // MARK: The selected speaker
+
+    /// The model picked in settings for the selected speaker, or nil.
     var pickedModel: String? {
-        get { speakerModels[host] }
-        set { speakerModels[host] = newValue }
+        get { selected?.entry.pickedModel }
+        set { if let selected { update(selected) { $0.pickedModel = newValue } } }
     }
 
-    /// The model the speaker is drawn as and whose finishes are listed (`KefModels.shown`).
-    var shownModel: String? {
-        KefModels.shown(reported: controller.device?.model, picked: pickedModel)
+    var shownModel: String? { selected?.shownModel }
+
+    /// Finish the selected speaker is drawn in (KefFinish.id), or nil for the app's own look.
+    var speakerFinishID: String? {
+        get { selected?.entry.finish }
+        set { if let selected { update(selected) { $0.finish = newValue } } }
     }
 
-    /// The picked finish, if it is one of the shown model's.
-    var speakerFinish: KefFinish? {
-        KefFinish.find(speakerFinishID, model: shownModel)
+    var speakerFinish: KefFinish? { selected?.finish }
+
+    var approachFromAbove: Bool {
+        get { selected?.entry.approachFromAbove ?? false }
+        set { if let selected { update(selected) { $0.approachFromAbove = newValue } } }
     }
 
     var appLimit: Int {
-        get { controller.appLimit }
-        set {
-            controller.appLimit = Self.clampLimit(newValue)
-            defaults.set(controller.appLimit, forKey: Keys.appLimit)
+        get { selected?.entry.appLimit ?? VolumePolicy.defaultAppLimit }
+        set { if let selected { update(selected) { $0.appLimit = newValue } } }
+    }
+
+    // MARK: Speakers
+
+    func hasPassword(_ slot: SpeakerSlot) -> Bool {
+        usesKeychain && KeychainStore.password(account: slot.entry.keychainAccount) != nil
+    }
+
+    /// Makes `slot` the speaker the panel, menu bar and shortcuts work on.
+    func select(_ slot: SpeakerSlot) {
+        guard slot.id != selected?.id, speakers.contains(where: { $0 === slot }) else { return }
+        deactivate(selected)
+        activate(slot)
+    }
+
+    /// The speaker that is no longer the selected one stops listening and being polled.
+    private func deactivate(_ slot: SpeakerSlot?) {
+        guard let c = slot?.controller else { return }
+        c.stopMonitoring()
+        c.listensForChanges = false
+        c.playbackEnabled = false
+        c.isPanelVisible = false
+    }
+
+    /// The selected speaker listens for change reports, is polled and reads what is playing.
+    private func activate(_ slot: SpeakerSlot) {
+        selectedID = slot.id
+        saveSpeakers()
+        let c = slot.controller
+        c.listensForChanges = true
+        c.playbackEnabled = showsNowPlaying
+        c.isPanelVisible = panelVisible
+        if started { c.startMonitoring() }
+        if c.phase == .idle {
+            connect(slot)
+        } else {
+            Task { await c.refresh() }
         }
     }
 
-    private static func clampLimit(_ value: Int) -> Int { min(100, max(1, value)) }
+    /// The "next speaker" shortcut.
+    @discardableResult
+    func selectNext() -> SpeakerSlot? {
+        guard let entry = SpeakerList.next(speakers.map(\.entry), after: selected?.id),
+              let next = speakers.first(where: { $0.id == entry.id }) else { return nil }
+        select(next)
+        return next
+    }
 
-    /// Validates and saves the address, then reconnects read-only.
+    /// Validates the address, saves the password and registers the speaker, then connects read-only.
+    /// The first one becomes the selected one. Returns the new speaker, or why it wasn't added.
+    func addSpeaker(host input: String, password: String) -> Result<SpeakerSlot, AddError> {
+        guard let host = KefW2Driver.validatedHost(input) else { return .failure(.message(KefError.invalidHost.description)) }
+        if let other = SpeakerList.withHost(host, in: speakers.map(\.entry)) {
+            return .failure(.message(loc("이미 추가한 스피커입니다: \(SpeakerList.displayName(other))", "Already added: \(SpeakerList.displayName(other))", "すでに追加したスピーカーです: \(SpeakerList.displayName(other))")))
+        }
+        let entry = SpeakerEntry(host: host)
+        if let error = storePassword(password.isEmpty ? nil : password, account: entry.keychainAccount, removeWhenEmpty: false) {
+            return .failure(.message(error))
+        }
+        let slot = makeSlot(entry)
+        speakers.append(slot)
+        if speakers.count == 1 {
+            activate(slot)
+        } else {
+            saveSpeakers()
+            connect(slot)
+        }
+        return .success(slot)
+    }
+
+    enum AddError: Error {
+        case message(String)
+    }
+
+    /// Validates and saves a speaker's address, then reconnects read-only.
     /// `password` nil keeps the stored one; an empty string removes it.
-    func saveConnection(host input: String, password: String?) -> String? {
-        guard let normalized = KefW2Driver.validatedHost(input) else {
-            return KefError.invalidHost.description
+    func saveConnection(_ slot: SpeakerSlot, host input: String, password: String?) -> String? {
+        guard let host = KefW2Driver.validatedHost(input) else { return KefError.invalidHost.description }
+        if let other = SpeakerList.withHost(host, in: speakers.map(\.entry), except: slot.id) {
+            return loc("이미 추가한 스피커입니다: \(SpeakerList.displayName(other))", "Already added: \(SpeakerList.displayName(other))", "すでに追加したスピーカーです: \(SpeakerList.displayName(other))")
         }
-        if usesKeychain {
-            do {
-                if let password {
-                    if password.isEmpty {
-                        try KeychainStore.deletePassword()
-                    } else {
-                        try KeychainStore.setPassword(password)
-                    }
-                }
-            } catch {
-                return loc("암호를 키체인에 저장하지 못했습니다", "Couldn't save the password to the keychain", "パスワードをキーチェーンに保存できませんでした")
-            }
-            hasPassword = KeychainStore.password() != nil
-        }
-        host = normalized
-        defaults.set(normalized, forKey: Keys.host)
-        connect()
+        if let error = storePassword(password, account: slot.entry.keychainAccount, removeWhenEmpty: true) { return error }
+        update(slot) { $0.host = host }
+        connect(slot)
         return nil
     }
 
-    /// Building a new driver invalidates everything queued for the old one.
-    func connect() {
-        let password = usesKeychain ? KeychainStore.password() ?? "" : ""
-        guard !host.isEmpty, let driver = try? KefW2Driver(host: host, password: password) else {
-            controller.disconnect()
-            return
+    private func storePassword(_ password: String?, account: String, removeWhenEmpty: Bool) -> String? {
+        guard usesKeychain, let password else { return nil }
+        do {
+            if password.isEmpty {
+                if removeWhenEmpty { try KeychainStore.deletePassword(account: account) }
+            } else {
+                try KeychainStore.setPassword(password, account: account)
+            }
+            return nil
+        } catch {
+            return loc("암호를 키체인에 저장하지 못했습니다", "Couldn't save the password to the keychain", "パスワードをキーチェーンに保存できませんでした")
         }
-        connect(using: driver)
     }
 
-    func connect(using driver: any SpeakerDriver) {
-        deviceReadAt = .now
-        let lastInput = lastInputs[host]
-        Task { await controller.connect(driver, lastInput: lastInput) }
+    /// Forgets a speaker and its password. When it was the selected one, the one before it takes over.
+    func remove(_ slot: SpeakerSlot) {
+        guard speakers.contains(where: { $0 === slot }) else { return }
+        let wasSelected = slot.id == selected?.id
+        let newSelection = SpeakerList.removing(slot.id, from: speakers.map(\.entry), selected: selected?.id).selected
+        deactivate(slot)
+        slot.controller.disconnect()
+        if usesKeychain { try? KeychainStore.deletePassword(account: slot.entry.keychainAccount) }
+        speakers.removeAll { $0 === slot }
+        deviceReadAt[slot.id] = nil
+        selectedID = newSelection
+        if wasSelected, let next = selected {
+            activate(next)
+        } else {
+            saveSpeakers()
+        }
+    }
+
+    /// Reconnects the selected speaker, e.g. from "Reconnect" in the panel.
+    func connect() {
+        if let selected { connect(selected) }
+    }
+
+    /// Building a new driver invalidates everything queued for the old one.
+    func connect(_ slot: SpeakerSlot) {
+        guard let driver = makeDriver(for: slot) else {
+            slot.controller.disconnect()
+            return
+        }
+        deviceReadAt[slot.id] = .now
+        let lastInput = slot.entry.lastInput
+        Task {
+            await slot.controller.connect(driver, lastInput: lastInput)
+            settled(slot)
+        }
+    }
+
+    private func makeDriver(for slot: SpeakerSlot) -> (any SpeakerDriver)? {
+        let entry = slot.entry
+        guard entry.isConfigured else { return nil }
+        let password = usesKeychain ? KeychainStore.password(account: entry.keychainAccount) ?? "" : ""
+        if let makeDriver { return try? makeDriver(entry, password) }
+        return try? KefW2Driver(host: entry.host, password: password)
+    }
+
+    /// After a connect or read: whether it was reached, and its name and model for the list.
+    private func settled(_ slot: SpeakerSlot) {
+        guard speakers.contains(where: { $0 === slot }) else { return }
+        slot.unreachable = !slot.controller.isOnline
+        if let device = slot.controller.device, slot.entry.name != device.name || slot.entry.model != device.model {
+            update(slot) {
+                $0.name = device.name
+                $0.model = device.model
+            }
+        }
+    }
+
+    /// Reads every speaker but the selected one, which is kept up to date anyway: the list shows them.
+    func refreshOthers() async {
+        let reads = speakers.filter { $0.id != selected?.id }.map { slot in Task { await refresh(slot) } }
+        for read in reads { await read.value }
+    }
+
+    /// Connects to or reads one speaker now.
+    func refresh(_ slot: SpeakerSlot) async {
+        let c = slot.controller
+        if c.phase == .idle {
+            guard let driver = makeDriver(for: slot) else { return }
+            deviceReadAt[slot.id] = .now
+            await c.connect(driver, lastInput: slot.entry.lastInput)
+        } else if !c.isBusy {
+            await c.refresh()
+        }
+        settled(slot)
+    }
+
+    /// The power switch of a row in the speaker list. Leaves the selection as it is.
+    func setPower(_ slot: SpeakerSlot, on: Bool) async {
+        if !slot.controller.isOnline { await refresh(slot) }
+        guard slot.controller.isOnline else { return }
+        if on { slot.controller.wake() } else { slot.controller.standby() }
+    }
+
+    /// "Turn all off": puts every speaker that is on in standby, the ones not read yet included.
+    func turnAllOff() async {
+        let offs = speakers.map { slot in Task { await turnOff(slot) } }
+        for off in offs { await off.value }
+    }
+
+    private func turnOff(_ slot: SpeakerSlot) async {
+        if !slot.controller.isOnline { await refresh(slot) }
+        guard slot.isOn, slot.controller.device?.capabilities.contains(.power) == true else { return }
+        slot.controller.standby()
     }
 
     // MARK: Panel
 
     func panelDidAppear() {
+        panelVisible = true
         controller.isPanelVisible = true
         Task {
             await controller.refresh()
@@ -215,15 +475,18 @@ final class AppModel {
     }
 
     func panelDidDisappear() {
+        panelVisible = false
+        speakerListOpen = false
         controller.isPanelVisible = false
     }
 
     /// The KEF maximum volume can change in KEF Connect at any time; it is read
     /// again when the panel or settings open, at most every 30 seconds.
-    func refreshDeviceIfStale() async {
-        if let deviceReadAt, deviceReadAt.duration(to: .now) < .seconds(30) { return }
-        deviceReadAt = .now
-        await controller.refreshDevice()
+    func refreshDeviceIfStale(_ slot: SpeakerSlot? = nil) async {
+        guard let slot = slot ?? selected else { return }
+        if let readAt = deviceReadAt[slot.id], readAt.duration(to: .now) < .seconds(30) { return }
+        deviceReadAt[slot.id] = .now
+        await slot.controller.refreshDevice()
     }
 
     func openSettings(_ tab: SettingsTab? = nil, using open: OpenSettingsAction) {
@@ -345,10 +608,14 @@ final class AppModel {
     private func observeSleep() {
         let center = NSWorkspace.shared.notificationCenter
         observers.append(center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.controller.suspend() }
+            MainActor.assumeIsolated {
+                for slot in self?.speakers ?? [] { slot.controller.suspend() }
+            }
         })
         observers.append(center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.controller.resume() }
+            MainActor.assumeIsolated {
+                for slot in self?.speakers ?? [] { slot.controller.resume() }
+            }
         })
     }
 }

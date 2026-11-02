@@ -35,8 +35,26 @@ struct MenuPanel: View {
         }
         .padding(16)
         .frame(width: 320)
+        // Beside the panel, its arrow on the header, like a popover from a Control Center row. NSPopover moves it
+        // to the other side when the panel is too close to the left of the screen.
+        .popover(
+            isPresented: Bindable(model).speakerListOpen,
+            attachmentAnchor: .rect(.rect(CGRect(x: 0, y: 16, width: 1, height: 30))),
+            arrowEdge: .leading
+        ) {
+            SpeakerListPopover { showSettings(.speaker) }
+                .environment(model)
+        }
         .onAppear { model.panelDidAppear() }
         .onDisappear { model.panelDidDisappear() }
+        // The other speakers are read while the list shows them, and again every few seconds.
+        .task(id: model.speakerListOpen) {
+            guard model.speakerListOpen else { return }
+            while !Task.isCancelled {
+                await model.refreshOthers()
+                try? await Task.sleep(for: AppModel.listRefresh)
+            }
+        }
         .task(id: controller.notice) {
             guard controller.notice != nil else { return }
             try? await Task.sleep(for: Self.noticeLifetime)
@@ -128,9 +146,7 @@ private struct PanelHeader: View {
                 .opacity(isOn ? 1 : 0.6)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(controller.device?.name.nonEmpty ?? "Remote for KEF")
-                    .font(.headline)
-                    .lineLimit(1)
+                SpeakerName()
                 Text(subtitle(controller))
                     .font(.subheadline)
                     .foregroundStyle(subtitleIsError(controller) ? Color.red : Color.secondary)
@@ -195,6 +211,173 @@ private struct PanelHeader: View {
 
     private func canTogglePower(_ c: SpeakerController) -> Bool {
         c.isOnline && !c.isBusy && !c.isWaking && c.snapshot != nil && c.device?.capabilities.contains(.power) == true
+    }
+}
+
+/// The selected speaker's name. With more than one speaker it is a button with a chevron that opens the list
+/// beside the panel. Nothing is filled behind it in any state: the chevron turning from > to < says the list is open.
+private struct SpeakerName: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let name = model.selected?.name ?? "Remote for KEF"
+        if model.hasSeveral {
+            Button {
+                model.speakerListOpen.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Text(name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Image(systemName: model.speakerListOpen ? "chevron.left" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(loc("스피커 바꾸기", "Switch speakers", "スピーカーを切り替える"))
+            .accessibilityLabel(name)
+            .accessibilityHint(loc("스피커 목록을 엽니다", "Opens the speaker list", "スピーカーの一覧を開きます"))
+        } else {
+            Text(name)
+                .font(.headline)
+                .lineLimit(1)
+        }
+    }
+}
+
+// MARK: Speaker list
+
+/// Every registered speaker with its state and power switch, like the device lists of Control Center. A row
+/// selects that speaker and closes the list; its switch only turns that speaker on or off.
+struct SpeakerListPopover: View {
+    @Environment(AppModel.self) private var model
+    let showSettings: () -> Void
+
+    @State private var turningAllOff = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(loc("스피커", "Speakers", "スピーカー"))
+                .font(.headline)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+            ForEach(model.speakers) { slot in
+                SpeakerListRow(slot: slot, selected: slot.id == model.selected?.id) {
+                    model.select(slot)
+                    model.speakerListOpen = false
+                }
+            }
+            Divider()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+            MenuRow(title: loc("모두 끄기", "Turn All Off", "すべてオフ"), disabled: turningAllOff) {
+                turningAllOff = true
+                Task {
+                    await model.turnAllOff()
+                    turningAllOff = false
+                }
+            }
+            MenuRow(title: loc("스피커 설정…", "Speaker Settings…", "スピーカーの設定…"), disabled: false) {
+                model.speakerListOpen = false
+                showSettings()
+            }
+        }
+        .padding(.top, 10)
+        .padding([.horizontal, .bottom], 6)
+        .frame(width: 260)
+    }
+}
+
+private struct SpeakerListRow: View {
+    @Environment(AppModel.self) private var model
+    let slot: SpeakerSlot
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        let c = slot.controller
+        let reachable = c.isOnline
+        HStack(spacing: 10) {
+            Button(action: action) {
+                HStack(spacing: 10) {
+                    Image(nsImage: SpeakerArt.monochrome(model: slot.shownModel, size: 20))
+                        .renderingMode(.template)
+                        .foregroundStyle(selected ? Color.white : Color.primary)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(selected ? Color.accentColor : Color.secondary.opacity(0.18)))
+                        .opacity(reachable || selected ? 1 : 0.5)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(slot.name)
+                            .lineLimit(1)
+                        Text(slot.listStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            Toggle(loc("\(slot.name) 전원", "\(slot.name) power", "\(slot.name)の電源"), isOn: power)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+                .disabled(!canTogglePower)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Color.primary.opacity(0.08) : Color.clear))
+        .onHover { hovering = $0 }
+    }
+
+    private var power: Binding<Bool> {
+        let c = slot.controller
+        return Binding(
+            get: {
+                switch c.activity {
+                case .powerOn?: true
+                case .powerOff?: false
+                default: slot.isOn || c.isWaking
+                }
+            },
+            set: { on in
+                Task { await model.setPower(slot, on: on) }
+            }
+        )
+    }
+
+    private var canTogglePower: Bool {
+        let c = slot.controller
+        return c.isOnline && !c.isBusy && !c.isWaking && c.snapshot != nil && c.device?.capabilities.contains(.power) == true
+    }
+}
+
+/// A text row at the foot of the list, like a menu item.
+private struct MenuRow: View {
+    let title: String
+    let disabled: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .background(RoundedRectangle(cornerRadius: 8).fill(hovering && !disabled ? Color.primary.opacity(0.08) : Color.clear))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -566,8 +749,7 @@ private struct SourceRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: SourceIcon.symbol(for: source.id))
-                    .font(.system(size: 12, weight: .medium))
+                SourceGlyph(sourceId: source.id)
                     .frame(width: 26, height: 26)
                     .foregroundStyle(selected ? Color.white : Color.primary)
                     .background(Circle().fill(selected ? Color.accentColor : Color.secondary.opacity(0.18)))
@@ -676,6 +858,24 @@ enum SourceIcon {
         case "coaxial": "cable.coaxial"
         case "analog": "waveform"
         default: "hifispeaker"
+        }
+    }
+}
+
+/// The input's symbol. Bluetooth is AppKit's own Bluetooth image, which SF Symbols has no counterpart for.
+struct SourceGlyph: View {
+    let sourceId: String
+
+    var body: some View {
+        if sourceId == "bluetooth", let image = NSImage(named: NSImage.bluetoothTemplateName) {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(height: 13)
+        } else {
+            Image(systemName: SourceIcon.symbol(for: sourceId))
+                .font(.system(size: 12, weight: .medium))
         }
     }
 }

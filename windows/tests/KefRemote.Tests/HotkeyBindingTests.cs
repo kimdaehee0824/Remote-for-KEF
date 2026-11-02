@@ -10,10 +10,20 @@ public class HotkeyBindingTests
     public void Empty_settings_mean_defaults()
     {
         var bindings = HotkeyBinding.Normalize(null);
-        Assert.Equal(3, bindings.Count);
+        Assert.Equal(4, bindings.Count);
         Assert.Equal("Ctrl + Alt + ↑", bindings.Single(b => b.Action == HotkeyAction.VolumeUp).ToString());
         Assert.Equal("Ctrl + Alt + ↓", bindings.Single(b => b.Action == HotkeyAction.VolumeDown).ToString());
         Assert.Equal("Ctrl + Alt + M", bindings.Single(b => b.Action == HotkeyAction.ToggleMute).ToString());
+        Assert.False(bindings.Single(b => b.Action == HotkeyAction.NextSpeaker).IsAssigned);
+    }
+
+    [Fact]
+    public void Shortcuts_saved_before_next_speaker_existed_get_it_turned_off()
+    {
+        var saved = HotkeyBinding.Defaults().Take(3).ToList();
+        var bindings = HotkeyBinding.Normalize(saved);
+        Assert.Equal(4, bindings.Count);
+        Assert.False(bindings.Single(b => b.Action == HotkeyAction.NextSpeaker).IsAssigned);
     }
 
     [Fact]

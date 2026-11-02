@@ -21,7 +21,8 @@ namespace KefRemote.App.Views;
 /// <summary>
 /// The tray flyout (design W1–W5): opens above the tray icon on any click, closes on Esc or when focus leaves.
 /// One place per fact: power is the switch, volume the big number, input the filled tile. The line under the
-/// name is the model unless something is out of the ordinary.
+/// name is the model unless something is out of the ordinary. With more than one speaker the name opens the
+/// speaker list beside the flyout; the body always shows the selected speaker.
 /// </summary>
 sealed class FlyoutView
 {
@@ -38,6 +39,15 @@ sealed class FlyoutView
 
     readonly Border appIcon;
     readonly TextBlock title = new() { FontSize = 15, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+    readonly FontIcon chevron = new() { Glyph = Glyphs.ChevronRight, FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) };
+    readonly Button nameButton;
+    readonly Flyout speakerFlyout;
+    readonly Grid speakerPanel = new() { Width = 300 };
+    readonly ListView speakerList = new() { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true, Padding = new Thickness(0, 4, 0, 4) };
+    readonly Button allOff = new() { Content = Loc.T("모두 끄기", "Turn all off", "すべて切る") };
+    readonly List<SpeakerRow> speakerRows = [];
+    string speakerSignature = "";
+    bool listOpen;
     readonly TextBlock subtitle = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     readonly ToggleSwitch power = new() { OnContent = "", OffContent = "", MinWidth = 0 };
 
@@ -119,6 +129,22 @@ sealed class FlyoutView
 
     sealed record SourceTile(string Id, Grid Container, ToggleButton Button, FontIcon Icon, ProgressRing Ring, Border LastInputRing);
 
+    sealed class SpeakerRow(SpeakerSlot slot, ListViewItem item, Border icon, TextBlock name, TextBlock status, ToggleSwitch power)
+    {
+        public SpeakerSlot Slot { get; } = slot;
+        public ListViewItem Item { get; } = item;
+        public Border Icon { get; } = icon;
+        public TextBlock Name { get; } = name;
+        public TextBlock Status { get; } = status;
+        public ToggleSwitch Power { get; } = power;
+        public (KefFinish?, string?) Drawn { get; set; } = (null, "-");
+    }
+
+    /// <summary>The speaker list's content, for self-test captures.</summary>
+    public FrameworkElement SpeakerListRoot => speakerPanel;
+
+    public bool SpeakerListOpen => listOpen;
+
     public FlyoutView(AppHost host)
     {
         this.host = host;
@@ -134,16 +160,32 @@ sealed class FlyoutView
         AutomationProperties.SetName(power, Loc.T("전원", "Power", "電源"));
         ToolTipService.SetToolTip(power, Loc.T("전원", "Power", "電源"));
         power.Toggled += OnPowerToggled;
+        // With several speakers the name opens the list. No fill in any state: the chevron says it opens something,
+        // and pointing left while the list is open says where it went.
+        nameButton = new Button
+        {
+            Content = Ui.Row(6, title, chevron),
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
+            MinHeight = 0,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+        };
+        foreach (string key in new[] { "ButtonBackground", "ButtonBackgroundPointerOver", "ButtonBackgroundPressed", "ButtonBackgroundDisabled",
+                     "ButtonBorderBrush", "ButtonBorderBrushPointerOver", "ButtonBorderBrushPressed", "ButtonBorderBrushDisabled" })
+            nameButton.Resources[key] = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        nameButton.Click += (_, _) => ToggleSpeakerList();
+        speakerFlyout = BuildSpeakerList();
         var header = Ui.Columns(12,
             (Ui.Auto, appIcon),
-            (Ui.Star, Ui.Column(0, title, subtitle)),
+            (Ui.Star, Ui.Column(0, nameButton, subtitle)),
             (Ui.Auto, power));
         header.Padding = new Thickness(16, 16, 12, 6);
         ((FrameworkElement)header.Children[1]).VerticalAlignment = VerticalAlignment.Center;
 
         // Problems and notices.
         retryButton.Click += async (_, _) => await host.ReconnectAsync();
-        setupButton.Click += (_, _) => host.OpenSettings(SettingsPage.Speaker);
+        setupButton.Click += (_, _) => host.OpenSettings(SettingsPage.Speaker, host.Selected);
         problem.Content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 12), Children = { retryButton, setupButton } };
         notice.Closed += (_, _) => host.Controller.ClearNotice();
 
@@ -249,6 +291,181 @@ sealed class FlyoutView
         return menu;
     }
 
+    // ---------- speaker list ----------
+
+    Flyout BuildSpeakerList()
+    {
+        speakerList.ItemClick += (_, e) =>
+        {
+            var row = speakerRows.FirstOrDefault(r => ReferenceEquals(r.Item, e.ClickedItem) || ReferenceEquals(r.Item.Content, e.ClickedItem));
+            speakerFlyout.Hide();
+            if (row != null && row.Slot != host.Selected) _ = host.SelectAsync(row.Slot);
+        };
+        speakerList.SelectionChanged += (_, _) =>
+        {
+            // Selection follows the selected speaker only; a click picks through ItemClick.
+            if (!updating) MarkSelectedRow();
+        };
+        allOff.Click += async (_, _) => await host.TurnAllOffAsync();
+        var manage = new HyperlinkButton { Content = Loc.T("스피커 관리", "Manage speakers", "スピーカーの管理"), HorizontalAlignment = HorizontalAlignment.Right };
+        manage.Click += (_, _) =>
+        {
+            speakerFlyout.Hide();
+            host.OpenSettings(SettingsPage.Speaker);
+        };
+        var footer = new Border
+        {
+            Style = Ui.Style("KefFooter"),
+            Padding = new Thickness(12, 8, 8, 10),
+            Child = Ui.Columns(8, (Ui.Auto, allOff), (Ui.Star, manage)),
+        };
+        speakerPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        speakerPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        speakerPanel.Children.Add(speakerList);
+        Grid.SetRow(footer, 1);
+        speakerPanel.Children.Add(footer);
+        // In its own popup window, outside the surface whose Language it would inherit.
+        speakerPanel.Language = Loc.Tag;
+        if (host.SelfTest) speakerPanel.Style = Ui.Style("KefSolidSurface");
+
+        var presenter = new Style(typeof(FlyoutPresenter));
+        presenter.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(0)));
+        presenter.Setters.Add(new Setter(FrameworkElement.MaxWidthProperty, 400.0));
+        // Beside the flyout, drawn outside its window like the gear menu.
+        var flyout = new Flyout
+        {
+            Content = speakerPanel,
+            Placement = FlyoutPlacementMode.LeftEdgeAlignedTop,
+            ShouldConstrainToRootBounds = false,
+            FlyoutPresenterStyle = presenter,
+        };
+        flyout.Opened += (_, _) =>
+        {
+            listOpen = true;
+            host.SetListOpen(true);
+            Refresh();
+        };
+        flyout.Closed += (_, _) =>
+        {
+            listOpen = false;
+            host.SetListOpen(false);
+            if (IsVisible && !closing)
+            {
+                // Focus back on the flyout, so a click elsewhere still closes it.
+                window.Activate();
+                Win32.SetForegroundWindow(hwnd);
+            }
+            Refresh();
+        };
+        return flyout;
+    }
+
+    void ToggleSpeakerList()
+    {
+        if (listOpen) speakerFlyout.Hide();
+        else OpenSpeakerList();
+    }
+
+    public void OpenSpeakerList()
+    {
+        if (!host.HasSeveral || !IsVisible) return;
+        RefreshSpeakerList();
+        speakerFlyout.ShowAt(surface, new FlyoutShowOptions { Placement = FlyoutPlacementMode.LeftEdgeAlignedTop });
+    }
+
+    public void CloseSpeakerList() => speakerFlyout.Hide();
+
+    /// <summary>Another speaker became the selected one: drop what was in progress on screen for the previous one.</summary>
+    public void SpeakerChanged()
+    {
+        pendingSource = null;
+        sentTarget = null;
+        dragging = false;
+        lastUserVolumeAt = 0;
+        shownFinish = null;
+        shownModel = "-";
+        if (IsVisible || host.SelfTest) Refresh();
+    }
+
+    void RefreshSpeakerList()
+    {
+        var all = host.Speakers;
+        string signature = string.Join(",", all.Select(s => s.Id));
+        if (signature != speakerSignature) BuildSpeakerRows(all, signature);
+        bool anyOn = false;
+        foreach (var row in speakerRows)
+        {
+            var slot = row.Slot;
+            var c = slot.Controller;
+            var phase = c.Phase;
+            bool isSelected = slot == host.Selected;
+            row.Name.Text = slot.Name;
+            row.Name.FontWeight = isSelected ? FontWeights.SemiBold : FontWeights.Normal;
+            row.Status.Text = SpeakerPresentation.ListStatus(c, slot.Unreachable);
+            var drawn = (slot.Finish, slot.ShownModel);
+            if (drawn != row.Drawn)
+            {
+                row.Drawn = drawn;
+                row.Icon.Child = Ui.AppGlyph(28, slot.Finish, slot.ShownModel);
+            }
+            row.Icon.Opacity = phase is SpeakerPhase.On or SpeakerPhase.Standby ? 1 : 0.55;
+            row.Power.IsOn = c.Operation switch
+            {
+                SpeakerOperation.PowerOn => true,
+                SpeakerOperation.PowerOff => false,
+                _ => phase == SpeakerPhase.On || c.IsWaking,
+            };
+            row.Power.IsEnabled = c.Supports(DriverCapabilities.Power) && phase is SpeakerPhase.On or SpeakerPhase.Standby && c.Operation == SpeakerOperation.None && !c.IsWaking;
+            string power = Loc.T($"{slot.Name} 전원", $"{slot.Name} power", $"{slot.Name}の電源");
+            AutomationProperties.SetName(row.Power, power);
+            AutomationProperties.SetName(row.Item, slot.Name);
+            if (phase == SpeakerPhase.On && c.Supports(DriverCapabilities.Power)) anyOn = true;
+        }
+        MarkSelectedRow();
+        allOff.IsEnabled = anyOn;
+    }
+
+    void MarkSelectedRow()
+    {
+        int index = speakerRows.FindIndex(r => r.Slot == host.Selected);
+        if (speakerList.SelectedIndex == index) return;
+        bool was = updating;
+        updating = true;
+        speakerList.SelectedIndex = index;
+        updating = was;
+    }
+
+    void BuildSpeakerRows(IReadOnlyList<SpeakerSlot> all, string signature)
+    {
+        speakerSignature = signature;
+        speakerRows.Clear();
+        speakerList.Items.Clear();
+        foreach (var slot in all)
+        {
+            var icon = new Border { Width = 28, Height = 28, VerticalAlignment = VerticalAlignment.Center };
+            var name = new TextBlock { FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis };
+            var status = Ui.Secondary("");
+            status.TextWrapping = TextWrapping.NoWrap;
+            status.TextTrimming = TextTrimming.CharacterEllipsis;
+            var power = new ToggleSwitch { OnContent = "", OffContent = "", MinWidth = 0, Margin = new Thickness(0, 0, -8, 0) };
+            var text = Ui.Column(0, name, status);
+            text.VerticalAlignment = VerticalAlignment.Center;
+            var grid = Ui.Columns(12, (Ui.Auto, icon), (Ui.Star, text), (Ui.Auto, power));
+            grid.Padding = new Thickness(0, 6, 0, 6);
+            var item = new ListViewItem { Content = grid, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+            var row = new SpeakerRow(slot, item, icon, name, status, power);
+            power.Toggled += async (_, _) =>
+            {
+                if (updating) return;
+                // Leaves the list open and the selection as it is: this is for turning off a speaker in another room.
+                await host.SetPowerAsync(slot, power.IsOn);
+                Refresh();
+            };
+            speakerRows.Add(row);
+            speakerList.Items.Add(item);
+        }
+    }
+
     // ---------- show / hide ----------
 
     /// <summary>Tray click: open, or close when it is open. The click that just closed it by taking focus does not reopen it.</summary>
@@ -290,6 +507,7 @@ sealed class FlyoutView
     public void Hide()
     {
         if (!IsVisible) return;
+        speakerFlyout.Hide();
         IsVisible = false;
         hiddenAt = Environment.TickCount64;
         appWindow.Hide();
@@ -367,7 +585,18 @@ sealed class FlyoutView
         try
         {
             // Header
-            title.Text = SpeakerPresentation.Title(c);
+            title.Text = configured && host.Selected is { } selected ? selected.Name : SpeakerPresentation.Title(c);
+            bool several = host.HasSeveral;
+            chevron.Visibility = Show(several);
+            chevron.Glyph = listOpen ? Glyphs.ChevronLeft : Glyphs.ChevronRight;
+            nameButton.IsHitTestVisible = several;
+            nameButton.IsTabStop = several;
+            AutomationProperties.SetAccessibilityView(nameButton, several ? Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Content : Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            AutomationProperties.SetName(nameButton, Loc.T($"스피커 바꾸기, 지금 {title.Text}", $"Switch speakers, now {title.Text}", $"スピーカーを切り替え、現在は{title.Text}"));
+            if (several) ToolTipService.SetToolTip(nameButton, Loc.T("스피커 바꾸기", "Switch speakers", "スピーカーを切り替え"));
+            else ToolTipService.SetToolTip(nameButton, null);
+            if (listOpen) RefreshSpeakerList();
+            if (listOpen && !several) speakerFlyout.Hide();
             if (offline)
             {
                 subtitle.Text = SpeakerPresentation.Offline;

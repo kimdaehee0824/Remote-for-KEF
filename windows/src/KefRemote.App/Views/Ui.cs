@@ -19,7 +19,8 @@ static class Glyphs
         Network = "\uE968", Limit = "\uE72E", Folder = "\uE838", Link = "\uE71B", Pin = "\uE840", Play = "\uE768",
         Refresh = "\uE72C", Message = "\uE8BD", Sort = "\uE8CB", Volume = "\uE767", Home = "\uE80F",
         Up = "\uE70E", Down = "\uE70D", Color = "\uE790", Update = "\uE895", Download = "\uE896",
-        Pause = "\uE769", Previous = "\uE892", Next = "\uE893";
+        Pause = "\uE769", Previous = "\uE892", Next = "\uE893", ChevronRight = "\uE76C", ChevronLeft = "\uE76B", Add = "\uE710",
+        Delete = "\uE74D";
 
     public static string ForSource(string id) => id switch
     {

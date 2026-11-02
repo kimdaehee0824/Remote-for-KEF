@@ -80,9 +80,9 @@ sealed class HotkeyManager : IDisposable
                 status[binding.Action] = HotkeyRegistration.Off;
                 continue;
             }
-            // Holding a volume key keeps stepping like the Windows volume keys; mute must not flicker.
+            // Holding a volume key keeps stepping like the Windows volume keys; mute and switching must not flicker.
             uint modifiers = (uint)binding.Modifiers;
-            if (binding.Action == HotkeyAction.ToggleMute) modifiers |= MOD_NOREPEAT;
+            if (binding.Action is HotkeyAction.ToggleMute or HotkeyAction.NextSpeaker) modifiers |= MOD_NOREPEAT;
             if (Win32.RegisterHotKey(window.Handle, id, modifiers, (uint)binding.Key))
             {
                 registered[id] = binding.Action;

@@ -7,12 +7,15 @@ enum ShortcutAction: String, CaseIterable, Codable, Sendable {
     case volumeUp
     case volumeDown
     case toggleMute
+    /// Makes the next registered speaker the one the shortcuts and the menu bar work on. Off by default.
+    case nextSpeaker
 
     var name: String {
         switch self {
         case .volumeUp: loc("음량 올리기", "Volume up", "音量を上げる")
         case .volumeDown: loc("음량 내리기", "Volume down", "音量を下げる")
         case .toggleMute: loc("음소거 켜기/끄기", "Mute on/off", "ミュートのオン/オフ")
+        case .nextSpeaker: loc("다음 스피커로 바꾸기", "Switch to the next speaker", "次のスピーカーに切り替える")
         }
     }
 
@@ -21,11 +24,12 @@ enum ShortcutAction: String, CaseIterable, Codable, Sendable {
         case .volumeUp: "speaker.wave.3"
         case .volumeDown: "speaker.wave.1"
         case .toggleMute: "speaker.slash"
+        case .nextSpeaker: "hifispeaker.2"
         }
     }
 
-    /// Volume keys repeat while held, like the system's; mute does not.
-    var repeats: Bool { self != .toggleMute }
+    /// Volume keys repeat while held, like the system's; mute and switching speakers do not.
+    var repeats: Bool { self == .volumeUp || self == .volumeDown }
 }
 
 /// A key with its modifiers, as saved in the defaults.

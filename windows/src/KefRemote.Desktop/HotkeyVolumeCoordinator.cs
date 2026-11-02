@@ -33,6 +33,7 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
     readonly VolumeKeyAccumulator accumulator = new();
     readonly Stopwatch clock = Stopwatch.StartNew();
     int timerGeneration;
+    int speakerGeneration;
     bool muteInFlight;
     bool disposed;
 
@@ -77,6 +78,18 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
             case HotkeyAction.VolumeDown: Nudge(-1); break;
             case HotkeyAction.ToggleMute: _ = ToggleMute(); break;
         }
+    }
+
+    /// <summary>
+    /// Another speaker is now the one the keys work on: presses not yet sent are dropped, and a write still running
+    /// for the previous speaker no longer moves the display.
+    /// </summary>
+    public void SpeakerChanged()
+    {
+        timerGeneration++;
+        speakerGeneration++;
+        accumulator.Failed();
+        muteInFlight = false;
     }
 
     void Nudge(int direction)
@@ -132,17 +145,20 @@ public sealed class HotkeyVolumeCoordinator : IDisposable
 
     async Task Send(int target)
     {
+        int speaker = speakerGeneration;
         try
         {
             await setVolumeTarget(target);
         }
         catch (Exception e)
         {
+            if (speaker != speakerGeneration) return;
             accumulator.Failed();
             Show(snapshot(), message: Loc.T("음량을 바꾸지 못했습니다: ", "Couldn't change the volume: ", "音量を変更できませんでした: ") + e.Message, error: true);
             return;
         }
 
+        if (speaker != speakerGeneration) return;
         var verified = snapshot();
         if (!accumulator.Completed(verified))
         {

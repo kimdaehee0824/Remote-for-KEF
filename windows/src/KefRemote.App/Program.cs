@@ -19,6 +19,7 @@ static class Program
     ///   --background            start in the tray without opening anything (used by "start with Windows")
     ///   --self-test &lt;folder&gt;   render every screen with a simulated speaker, save PNGs there and exit
     ///   --demo                  run against a simulated speaker with the flyout open, for screenshots
+    ///   --speakers 1-4          with --demo: how many simulated speakers (rooms) to register
     ///   --lang ko|en|ja         show the UI in this language instead of the Windows display language
     /// </summary>
     [STAThread]
@@ -61,13 +62,14 @@ static class Program
     }
 }
 
-sealed record LaunchOptions(bool Background, string? SelfTestFolder, bool Demo = false, UiLanguage? Language = null)
+sealed record LaunchOptions(bool Background, string? SelfTestFolder, bool Demo = false, UiLanguage? Language = null, int DemoSpeakers = 1)
 {
     public static LaunchOptions Parse(string[] args)
     {
         bool background = false, demo = false;
         string? selfTest = null;
         UiLanguage? language = null;
+        int speakers = 1;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
@@ -81,11 +83,14 @@ sealed record LaunchOptions(bool Background, string? SelfTestFolder, bool Demo =
                 case "--demo":
                     demo = true;
                     break;
+                case "--speakers":
+                    if (i + 1 < args.Length && int.TryParse(args[++i], out int count)) speakers = count;
+                    break;
                 case "--lang":
                     language = i + 1 < args.Length ? Loc.Parse(args[++i]) : null;
                     break;
             }
         }
-        return new LaunchOptions(background, selfTest, demo, language);
+        return new LaunchOptions(background, selfTest, demo, language, speakers);
     }
 }

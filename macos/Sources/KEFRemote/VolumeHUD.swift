@@ -17,6 +17,11 @@ final class VolumeKeys {
     }
 
     func press(_ action: ShortcutAction) {
+        if action == .nextSpeaker {
+            // Shown even with the indicator turned off: it is the only sign the shortcut did something.
+            if model.selectNext() != nil { hud.show(.speaker) }
+            return
+        }
         let controller = model.controller
         guard controller.isOnline, let state = controller.snapshot, controller.device != nil else {
             hud.show(.problem(controller.phase == .connecting
@@ -49,6 +54,8 @@ final class VolumeKeys {
         case .toggleMute:
             controller.toggleMute()
             if model.showsVolumeHUD { hud.show(.level) }
+        case .nextSpeaker:
+            break
         }
     }
 }
@@ -73,6 +80,8 @@ final class VolumeHUD {
         case limit
         /// Why nothing changed, in place of the track.
         case problem(String)
+        /// The speaker the next-speaker shortcut switched to: its volume once it is on, else its name and state.
+        case speaker
     }
 
     /// How long the indicator stays after the last press, or after the pointer leaves it.
@@ -278,49 +287,96 @@ struct HUDView: View {
         ZStack(alignment: .leading) {
             switch state.content {
             case .level, .limit:
-                let symbol = Self.symbol(volume: volume, muted: muted)
-                Image(systemName: symbol)
-                    .resizable()
-                    .fontWeight(.semibold)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(height: Self.symbolHeight(symbol))
-                    .foregroundStyle(.primary)
-                    .padding(.leading, muted ? Self.symbolInset - 2.5 : Self.symbolInset)
-                ZStack {
-                    if state.hovering {
-                        Slider(value: sliderValue(controller, volume: volume, muted: muted), in: 0...100)
-                            .labelsHidden()
-                            .tint(.primary)
-                    } else {
-                        SegmentedTrack(
-                            volume: muted ? 0 : volume,
-                            limit: controller.effectiveLimit,
-                            atLimit: state.content == .limit
-                        )
-                    }
+                level(controller, volume: volume, muted: muted)
+            case .speaker:
+                if Self.isReady(controller) {
+                    level(controller, volume: volume, muted: muted)
+                } else {
+                    speakerSymbol(volume: volume, muted: false)
+                        .opacity(0.5)
+                    message(speakerLine)
                 }
-                .frame(width: Self.trackWidth)
-                .padding(.leading, Self.trackLeading)
-                .animation(.easeOut(duration: 0.15), value: state.hovering)
             case let .problem(text):
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.leading, Self.symbolInset)
-                Text(text)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(width: Self.trackWidth, alignment: .leading)
-                    .padding(.leading, Self.trackLeading)
+                message(text)
             }
         }
         .frame(width: Self.size.width, height: Self.size.height, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(loc("음량", "Volume", "音量"))
-        .accessibilityValue(accessibilityValue(volume: volume, muted: muted))
+        .accessibilityLabel(model.hasSeveral ? "\(loc("음량", "Volume", "音量")), \(model.selected?.name ?? "")" : loc("음량", "Volume", "音量"))
+        .accessibilityValue(accessibilityValue(controller, volume: volume, muted: muted))
     }
+
+    @ViewBuilder
+    private func level(_ controller: SpeakerController, volume: Int, muted: Bool) -> some View {
+        speakerSymbol(volume: volume, muted: muted)
+        ZStack {
+            if state.hovering {
+                Slider(value: sliderValue(controller, volume: volume, muted: muted), in: 0...100)
+                    .labelsHidden()
+                    .tint(.primary)
+            } else {
+                SegmentedTrack(
+                    volume: muted ? 0 : volume,
+                    limit: controller.effectiveLimit,
+                    atLimit: state.content == .limit
+                )
+            }
+        }
+        .frame(width: Self.trackWidth)
+        .padding(.leading, Self.trackLeading)
+        .animation(.easeOut(duration: 0.15), value: state.hovering)
+    }
+
+    /// The system's speaker symbol with one speaker. With several, the selected one's model drawn in one color,
+    /// so the indicator says which speaker it is without words, the way the system's says which output it is.
+    @ViewBuilder
+    private func speakerSymbol(volume: Int, muted: Bool) -> some View {
+        if model.hasSeveral {
+            Image(nsImage: SpeakerArt.monochrome(model: model.shownModel, size: Self.glyphSize, slashed: muted))
+                .renderingMode(.template)
+                .foregroundStyle(.primary)
+                .frame(width: Self.glyphSize, height: Self.glyphSize)
+                .padding(.leading, Self.glyphInset)
+        } else {
+            let symbol = Self.symbol(volume: volume, muted: muted)
+            Image(systemName: symbol)
+                .resizable()
+                .fontWeight(.semibold)
+                .aspectRatio(contentMode: .fit)
+                .frame(height: Self.symbolHeight(symbol))
+                .foregroundStyle(.primary)
+                .padding(.leading, muted ? Self.symbolInset - 2.5 : Self.symbolInset)
+        }
+    }
+
+    private func message(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(width: Self.trackWidth, alignment: .leading)
+            .padding(.leading, Self.trackLeading)
+    }
+
+    /// On, awake and read: the track can show its volume.
+    static func isReady(_ controller: SpeakerController) -> Bool {
+        controller.isOnline && controller.snapshot?.power == .on && !controller.isWaking
+    }
+
+    /// "Living Room: Standby" for a speaker switched to that isn't playing.
+    private var speakerLine: String {
+        guard let slot = model.selected else { return "" }
+        return "\(slot.name): \(slot.listStatus)"
+    }
+
+    /// The model glyph's square, and where it starts so its body sits where the system symbol's does.
+    static let glyphSize: CGFloat = 26
+    static let glyphInset: CGFloat = 17
 
     /// Dragging sends the volume like the panel's slider: never above the limit, and
     /// only lower while the speaker is already above it. Raising from mute unmutes.
@@ -348,8 +404,9 @@ struct HUDView: View {
         return muted
     }
 
-    private func accessibilityValue(volume: Int, muted: Bool) -> String {
+    private func accessibilityValue(_ controller: SpeakerController, volume: Int, muted: Bool) -> String {
         if case let .problem(text) = state.content { return text }
+        if state.content == .speaker, !Self.isReady(controller) { return speakerLine }
         return muted ? loc("음소거", "Muted", "ミュート") : "\(volume)"
     }
 

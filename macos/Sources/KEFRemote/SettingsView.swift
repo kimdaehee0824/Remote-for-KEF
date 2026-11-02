@@ -3,7 +3,8 @@ import KefW2Driver
 import ServiceManagement
 import SwiftUI
 
-/// Settings window with toolbar tabs (design M5): General, Speaker, Volume.
+/// Settings window with toolbar tabs (design M5): General, Speaker, Shortcuts. The volume limit and correction
+/// belong to each speaker and sit on its page.
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
 
@@ -16,9 +17,6 @@ struct SettingsView: View {
             SpeakerSettings()
                 .tabItem { Label(loc("스피커", "Speaker", "スピーカー"), systemImage: "hifispeaker") }
                 .tag(SettingsTab.speaker)
-            VolumeSettings()
-                .tabItem { Label(loc("음량", "Volume", "音量"), systemImage: "speaker.wave.2") }
-                .tag(SettingsTab.volume)
             ShortcutSettings()
                 .tabItem { Label(loc("단축키", "Shortcuts", "ショートカット"), systemImage: "keyboard") }
                 .tag(SettingsTab.shortcuts)
@@ -66,7 +64,7 @@ struct ShortcutSettings: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 470)
+        .frame(width: 500, height: 540)
         .onDisappear { model.stopRecording() }
     }
 }
@@ -101,6 +99,10 @@ private struct ShortcutRow: View {
                 Text(wrapping: loc("다른 앱이 이미 쓰고 있어 등록하지 못했습니다. 다른 조합으로 바꿔 주세요.", "Another app already uses it, so it couldn't be registered. Choose another combination.", "ほかのアプリがすでに使っているため登録できませんでした。別の組み合わせに変更してください。"))
                     .font(.callout)
                     .foregroundStyle(.red)
+            } else if action == .nextSpeaker {
+                Text(wrapping: loc("스피커가 2대 이상일 때 선택한 스피커를 목록 순서대로 바꿉니다.", "With two or more speakers, moves to the next one in the list.", "スピーカーが2台以上のとき、選択中のスピーカーを一覧の順に切り替えます。"))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -185,55 +187,214 @@ private struct UpdateSettings: View {
     }
 }
 
+/// Speakers. One speaker shows its page right here; several are a list like the device lists of System Settings,
+/// each with an (i) that opens its page. Everything on a page belongs to that speaker: address, password, model,
+/// finish, limit and volume correction.
 struct SpeakerSettings: View {
     @Environment(AppModel.self) private var model
 
-    @State private var hostDraft = ""
-    @State private var passwordDraft = ""
-    @State private var connectionError: String?
+    @State private var shown: SpeakerSlot?
+    @State private var adding = false
 
     var body: some View {
-        let controller = model.controller
+        Group {
+            if model.speakers.isEmpty {
+                Form {
+                    AddSpeakerSection(first: true) { _ in }
+                }
+                .formStyle(.grouped)
+                .frame(width: 500, height: 330)
+            } else if model.speakers.count == 1, let slot = model.speakers.first {
+                SpeakerPage(slot: slot) {
+                    Section {
+                        HStack {
+                            Spacer()
+                            Button(loc("스피커 추가…", "Add Speaker…", "スピーカーを追加…")) { adding = true }
+                        }
+                    } footer: {
+                        Text(wrapping: loc("다른 방의 스피커도 추가하면 메뉴 막대 패널에서 골라 조작할 수 있습니다.", "Add speakers in other rooms to pick the one to control in the menu bar panel.", "ほかの部屋のスピーカーも追加すると、メニューバーのパネルで選んで操作できます。"))
+                    }
+                }
+                .frame(width: 500, height: 640)
+            } else {
+                SpeakerListForm(shown: $shown, adding: $adding)
+                    .frame(width: 500, height: 420)
+            }
+        }
+        .sheet(item: $shown) { slot in
+            SpeakerSheet(slot: slot) { shown = nil }
+        }
+        .sheet(isPresented: $adding) {
+            AddSpeakerSheet { adding = false }
+        }
+    }
+}
+
+/// Two or more speakers: one row each, with the model and the (i) for its page.
+private struct SpeakerListForm: View {
+    @Environment(AppModel.self) private var model
+    @Binding var shown: SpeakerSlot?
+    @Binding var adding: Bool
+
+    var body: some View {
         Form {
             Section {
-                TextField(loc("IP 주소", "IP address", "IPアドレス"), text: $hostDraft, prompt: Text("192.168.0.14"))
-                SecureField(loc("웹페이지 암호", "Web page password", "Webページのパスワード"), text: $passwordDraft, prompt: Text(model.hasPassword ? loc("저장됨 (바꿀 때만 입력)", "Saved (enter only to change it)", "保存済み（変更する場合のみ入力）") : loc("없음", "None", "なし")))
-                HStack(spacing: 8) {
-                    if let connectionError {
-                        StatusDot(color: .red)
-                        Text(connectionError).foregroundStyle(.red)
-                    } else {
-                        StatusDot(color: statusColor(controller.phase))
-                        Text(statusText(controller.phase))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                    Spacer()
-                    if model.hasPassword {
-                        Button(loc("암호 삭제", "Delete Password", "パスワードを削除")) {
-                            connectionError = model.saveConnection(host: hostDraft, password: "")
+                ForEach(model.speakers) { slot in
+                    HStack(spacing: 10) {
+                        Image(nsImage: SpeakerArt.image(slot.finish, model: slot.shownModel, size: 24))
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(Color.secondary.opacity(0.12)))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(slot.name).lineLimit(1)
+                            Text(slot.controller.device?.model ?? slot.entry.model ?? slot.entry.host)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
+                        Spacer(minLength: 8)
+                        if slot.id == model.selected?.id {
+                            Text(loc("선택됨", "Selected", "選択中")).foregroundStyle(.secondary)
+                        } else if slot.unreachable {
+                            Text(SpeakerSlot.notConnected).foregroundStyle(.secondary)
+                        }
+                        Button {
+                            shown = slot
+                        } label: {
+                            Image(systemName: "info.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(loc("\(slot.name) 설정", "\(slot.name) settings", "\(slot.name)の設定"))
+                        .accessibilityLabel(loc("\(slot.name) 설정", "\(slot.name) settings", "\(slot.name)の設定"))
                     }
-                    Button(loc("저장하고 연결", "Save and Connect", "保存して接続")) {
-                        connectionError = model.saveConnection(host: hostDraft, password: passwordDraft.isEmpty ? nil : passwordDraft)
-                        passwordDraft = ""
-                    }
-                    .keyboardShortcut(.defaultAction)
                 }
-            } header: {
-                Text(loc("연결", "Connection", "接続"))
             } footer: {
-                Text(wrapping: loc("KEF 계정 암호가 아니라 스피커 웹페이지 암호입니다. 설정하지 않았다면 비워 두세요. 연결과 재연결은 상태를 읽기만 하고 음량이나 입력을 바꾸지 않습니다. IP 주소는 KEF Connect의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다.", "This is the speaker's web page password, not your KEF account password. Leave it empty if you haven't set one. Connecting and reconnecting only read the status and never change the volume or input. You can find the IP address in the speaker info in KEF Connect or on your router's admin page.", "KEFアカウントのパスワードではなく、スピーカーのWebページのパスワードです。設定していない場合は空欄のままにしてください。接続と再接続は状態を読み取るだけで、音量や入力は変更しません。IPアドレスはKEF Connectのスピーカー情報やルーターの管理画面で確認できます。"))
+                Text(wrapping: loc("메뉴 막대와 단축키는 선택한 스피커를 조작합니다. 선택은 메뉴 막대 패널에서 바꿉니다.", "The menu bar and shortcuts control the selected speaker. Change it in the menu bar panel.", "メニューバーとショートカットは選択中のスピーカーを操作します。選択はメニューバーのパネルで変えます。"))
             }
+            Section {
+                HStack {
+                    Spacer()
+                    Button(loc("스피커 추가…", "Add Speaker…", "スピーカーを追加…")) { adding = true }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .task { await model.refreshOthers() }
+    }
+}
+
+/// A speaker's page over the list, closed with Done.
+struct SpeakerSheet: View {
+    let slot: SpeakerSlot
+    let done: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            SpeakerPage(slot: slot, removed: done) { EmptyView() }
+            Divider()
+            HStack {
+                Spacer()
+                Button(loc("완료", "Done", "完了"), action: done)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+        }
+        .frame(width: 500, height: 620)
+    }
+}
+
+private struct AddSpeakerSheet: View {
+    let done: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                AddSpeakerSection(first: false) { _ in done() }
+            }
+            .formStyle(.grouped)
+            Divider()
+            HStack {
+                Spacer()
+                Button(loc("취소", "Cancel", "キャンセル"), action: done)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+        }
+        .frame(width: 460, height: 340)
+    }
+}
+
+/// Address and password of a speaker to add. It is added only with an address the app accepts and that no other
+/// speaker uses; connecting afterwards only reads.
+private struct AddSpeakerSection: View {
+    @Environment(AppModel.self) private var model
+    let first: Bool
+    let added: (SpeakerSlot) -> Void
+
+    @State private var host = ""
+    @State private var password = ""
+    @State private var error: String?
+
+    var body: some View {
+        Section {
+            TextField(loc("IP 주소", "IP address", "IPアドレス"), text: $host, prompt: Text("192.168.0.14"))
+            SecureField(loc("웹페이지 암호", "Web page password", "Webページのパスワード"), text: $password, prompt: Text(loc("없음", "None", "なし")))
+            HStack(spacing: 8) {
+                if let error {
+                    StatusDot(color: .red)
+                    Text(error).foregroundStyle(.red).lineLimit(2)
+                }
+                Spacer()
+                Button(first ? loc("저장하고 연결", "Save and Connect", "保存して接続") : loc("추가", "Add", "追加")) {
+                    switch model.addSpeaker(host: host, password: password) {
+                    case let .success(slot):
+                        host = ""
+                        password = ""
+                        error = nil
+                        added(slot)
+                    case let .failure(.message(message)):
+                        error = message
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        } header: {
+            Text(first ? loc("연결", "Connection", "接続") : loc("스피커 추가", "Add Speaker", "スピーカーを追加"))
+        } footer: {
+            ConnectionFooter()
+        }
+    }
+}
+
+private struct ConnectionFooter: View {
+    var body: some View {
+        Text(wrapping: loc("KEF 계정 암호가 아니라 스피커 웹페이지 암호입니다. 설정하지 않았다면 비워 두세요. 연결과 재연결은 상태를 읽기만 하고 음량이나 입력을 바꾸지 않습니다. IP 주소는 KEF Connect의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다.", "This is the speaker's web page password, not your KEF account password. Leave it empty if you haven't set one. Connecting and reconnecting only read the status and never change the volume or input. You can find the IP address in the speaker info in KEF Connect or on your router's admin page.", "KEFアカウントのパスワードではなく、スピーカーのWebページのパスワードです。設定していない場合は空欄のままにしてください。接続と再接続は状態を読み取るだけで、音量や入力は変更しません。IPアドレスはKEF Connectのスピーカー情報やルーターの管理画面で確認できます。"))
+    }
+}
+
+/// One speaker's settings: connection, what it is, its volume limit and correction, and removing it.
+private struct SpeakerPage<Extra: View>: View {
+    @Environment(AppModel.self) private var model
+    let slot: SpeakerSlot
+    var removed: () -> Void = {}
+    @ViewBuilder let extra: Extra
+
+    @State private var confirmingRemoval = false
+
+    var body: some View {
+        let controller = slot.controller
+        Form {
+            ConnectionSection(slot: slot)
 
             if let device = controller.device {
                 Section {
                     LabeledContent(loc("이름", "Name", "名前"), value: device.name)
                     LabeledContent(loc("모델", "Model", "モデル"), value: device.model)
                     if !KefModels.names.contains(device.model) {
-                        ModelPicker()
+                        ModelPicker(slot: slot)
                     }
-                    FinishPicker(model: model.shownModel)
+                    FinishPicker(slot: slot)
                     LabeledContent(loc("펌웨어", "Firmware", "ファームウェア"), value: device.firmware)
                     LabeledContent(loc("검증 상태", "Verification", "検証状況"), value: device.verifiedModel ? loc("실기 검증됨", "Tested on a real speaker", "実機で検証済み") : loc("미검증 모델 (공개 코드 기준)", "Unverified model (based on public code)", "未検証のモデル（公開コードに基づく）"))
                 } header: {
@@ -246,12 +407,85 @@ struct SpeakerSettings: View {
                     }
                 }
             }
+
+            VolumeSections(slot: slot)
+
+            Section {
+                HStack {
+                    Spacer()
+                    Button(loc("스피커 삭제…", "Remove Speaker…", "スピーカーを削除…"), role: .destructive) { confirmingRemoval = true }
+                        .confirmationDialog(
+                            loc("이 스피커를 목록에서 지울까요?", "Remove \(slot.name) from the list?", "\(slot.name)を一覧から削除しますか？"),
+                            isPresented: $confirmingRemoval
+                        ) {
+                            Button(loc("삭제", "Remove", "削除"), role: .destructive) {
+                                model.remove(slot)
+                                removed()
+                            }
+                        } message: {
+                            Text(loc("\(slot.name)의 주소, 암호, 상한 같은 설정도 함께 지웁니다. 스피커 자체는 바뀌지 않습니다.", "Its address, password, limit and other settings go with it. Nothing changes on the speaker itself.", "アドレス、パスワード、上限などこのスピーカーの設定も削除します。スピーカー自体は変わりません。"))
+                        }
+                }
+            }
+
+            extra
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: controller.device.map { KefModels.names.contains($0.model) ? CGFloat(540) : 600 } ?? 300)
-        .onAppear {
-            hostDraft = model.host
+        .task(id: slot.id) {
+            await model.refresh(slot)
+            await model.refreshDeviceIfStale(slot)
+        }
+    }
+}
+
+private struct ConnectionSection: View {
+    @Environment(AppModel.self) private var model
+    let slot: SpeakerSlot
+
+    @State private var hostDraft = ""
+    @State private var passwordDraft = ""
+    @State private var connectionError: String?
+    @State private var hasPassword = false
+
+    var body: some View {
+        let phase = slot.controller.phase
+        Section {
+            TextField(loc("IP 주소", "IP address", "IPアドレス"), text: $hostDraft, prompt: Text("192.168.0.14"))
+            SecureField(loc("웹페이지 암호", "Web page password", "Webページのパスワード"), text: $passwordDraft, prompt: Text(hasPassword ? loc("저장됨 (바꿀 때만 입력)", "Saved (enter only to change it)", "保存済み（変更する場合のみ入力）") : loc("없음", "None", "なし")))
+            HStack(spacing: 8) {
+                if let connectionError {
+                    StatusDot(color: .red)
+                    Text(connectionError).foregroundStyle(.red)
+                } else {
+                    StatusDot(color: statusColor(phase))
+                    Text(statusText(phase))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if hasPassword {
+                    Button(loc("암호 삭제", "Delete Password", "パスワードを削除")) {
+                        connectionError = model.saveConnection(slot, host: hostDraft, password: "")
+                        hasPassword = model.hasPassword(slot)
+                    }
+                }
+                Button(loc("저장하고 연결", "Save and Connect", "保存して接続")) {
+                    connectionError = model.saveConnection(slot, host: hostDraft, password: passwordDraft.isEmpty ? nil : passwordDraft)
+                    passwordDraft = ""
+                    hasPassword = model.hasPassword(slot)
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        } header: {
+            Text(loc("연결", "Connection", "接続"))
+        } footer: {
+            ConnectionFooter()
+        }
+        .task(id: slot.id) {
+            hostDraft = slot.entry.host
             passwordDraft = ""
+            connectionError = nil
+            hasPassword = model.hasPassword(slot)
         }
     }
 
@@ -260,7 +494,7 @@ struct SpeakerSettings: View {
         case .online: .green
         case .connecting: .yellow
         case .offline: .red
-        case .idle: .secondary
+        case .idle: slot.unreachable ? .red : .secondary
         }
     }
 
@@ -270,8 +504,82 @@ struct SpeakerSettings: View {
         case .online: loc("연결됨", "Connected", "接続済み")
         case .connecting: loc("연결 중…", "Connecting…", "接続中…")
         case let .offline(message): message
-        case .idle: loc("설정되지 않음", "Not set up", "未設定")
+        case .idle: slot.entry.isConfigured ? SpeakerSlot.notConnected : loc("설정되지 않음", "Not set up", "未設定")
         }
+    }
+}
+
+/// The app's limit for this speaker next to the KEF device maximum, and the volume correction.
+private struct VolumeSections: View {
+    @Environment(AppModel.self) private var model
+    let slot: SpeakerSlot
+
+    var body: some View {
+        let controller = slot.controller
+        let limit = Binding(
+            get: { slot.entry.appLimit },
+            set: { value in model.update(slot) { $0.appLimit = value } }
+        )
+        Section {
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Slider(value: Binding(
+                        get: { Double(limit.wrappedValue) },
+                        set: { limit.wrappedValue = Int($0.rounded()) }
+                    ), in: 1...100)
+                    .labelsHidden()
+                    .frame(width: 150)
+                    TextField(loc("앱 상한", "App limit", "アプリの上限"), value: limit, format: .number)
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 44)
+                }
+            } label: {
+                Text(loc("앱 상한", "App limit", "アプリの上限"))
+                Text(loc("이 앱에서 올릴 수 있는 최대 음량", "The highest volume this app raises to", "このアプリで上げられる最大の音量"))
+            }
+            LabeledContent {
+                Text(deviceLimitText(controller))
+            } label: {
+                Text(loc("KEF 기기 최대 음량", "KEF device maximum", "KEF機器の最大音量"))
+                Text(loc("KEF Connect에서 정한 값. 둘 중 낮은 값을 씁니다", "Set in KEF Connect. The lower of the two applies", "KEF Connectで設定した値。低いほうを使います"))
+            }
+            LabeledContent(loc("지금 적용 중인 상한", "Limit in effect", "現在の上限")) {
+                Text(verbatim: "\(controller.effectiveLimit) (\(LimitText.source(controller)))")
+                    .monospacedDigit()
+            }
+        } header: {
+            Text(loc("음량 상한", "Volume Limit", "音量の上限"))
+        } footer: {
+            Text(wrapping: loc("낮추기는 언제나 됩니다. 리모컨과 KEF Connect에서 바꾸는 음량은 제한하지 않습니다.", "Lowering always works. Volume changed with the remote or KEF Connect isn't limited.", "下げる操作はいつでもできます。リモコンやKEF Connectで変えた音量は制限しません。"))
+        }
+
+        Section(loc("음량 보정", "Volume Correction", "音量補正")) {
+            // Laid out by hand so the (i) button can sit right after the title.
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ"))
+                        ApproachInfoButton()
+                    }
+                    Text(loc("올릴 때 목표보다 살짝 높게 보낸 뒤 목표로 내립니다", "When raising, sends a slightly higher value first and then settles on the target", "上げるときは目標より少し高く送ってから目標に下げます"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ"), isOn: Binding(
+                    get: { slot.entry.approachFromAbove },
+                    set: { value in model.update(slot) { $0.approachFromAbove = value } }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
+        }
+    }
+
+    private func deviceLimitText(_ controller: SpeakerController) -> String {
+        guard let device = controller.device else { return loc("연결 후 표시", "Shown once connected", "接続後に表示") }
+        return device.deviceVolumeLimit.map(String.init) ?? loc("꺼짐", "Off", "オフ")
     }
 }
 
@@ -279,9 +587,13 @@ struct SpeakerSettings: View {
 /// The inputs stay those of the reported model, so a wrong pick never hides an input the speaker has.
 private struct ModelPicker: View {
     @Environment(AppModel.self) private var appModel
+    let slot: SpeakerSlot
 
     var body: some View {
-        Picker(loc("모델 선택", "Choose Model", "モデルを選択"), selection: Binding(get: { appModel.pickedModel }, set: { appModel.pickedModel = $0 })) {
+        Picker(loc("모델 선택", "Choose Model", "モデルを選択"), selection: Binding(
+            get: { slot.entry.pickedModel },
+            set: { value in appModel.update(slot) { $0.pickedModel = value } }
+        )) {
             Label {
                 Text(loc("고르지 않음", "None", "選択しない"))
             } icon: {
@@ -305,10 +617,14 @@ private struct ModelPicker: View {
 /// only the app's own colors before the model is known.
 private struct FinishPicker: View {
     @Environment(AppModel.self) private var appModel
-    let model: String?
+    let slot: SpeakerSlot
 
     var body: some View {
-        Picker(loc("색상", "Finish", "カラー"), selection: Binding(get: { appModel.speakerFinish?.id }, set: { appModel.speakerFinishID = $0 })) {
+        let model = slot.shownModel
+        Picker(loc("색상", "Finish", "カラー"), selection: Binding(
+            get: { slot.finish?.id },
+            set: { value in appModel.update(slot) { $0.finish = value } }
+        )) {
             Label {
                 Text(loc("앱 기본", "App default", "アプリの既定"))
             } icon: {
@@ -332,77 +648,6 @@ private struct StatusDot: View {
 
     var body: some View {
         Circle().fill(color).frame(width: 8, height: 8).accessibilityHidden(true)
-    }
-}
-
-struct VolumeSettings: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        @Bindable var model = model
-        let controller = model.controller
-        Form {
-            Section {
-                LabeledContent {
-                    HStack(spacing: 8) {
-                        Slider(value: Binding(
-                            get: { Double(model.appLimit) },
-                            set: { model.appLimit = Int($0.rounded()) }
-                        ), in: 1...100)
-                        .labelsHidden()
-                        .frame(width: 150)
-                        TextField(loc("앱 상한", "App limit", "アプリの上限"), value: $model.appLimit, format: .number)
-                            .labelsHidden()
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 44)
-                    }
-                } label: {
-                    Text(loc("앱 상한", "App limit", "アプリの上限"))
-                    Text(loc("이 앱에서 올릴 수 있는 최대 음량", "The highest volume this app raises to", "このアプリで上げられる最大の音量"))
-                }
-                LabeledContent {
-                    Text(deviceLimitText(controller))
-                } label: {
-                    Text(loc("KEF 기기 최대 음량", "KEF device maximum", "KEF機器の最大音量"))
-                    Text(loc("KEF Connect에서 정한 값. 둘 중 낮은 값을 씁니다", "Set in KEF Connect. The lower of the two applies", "KEF Connectで設定した値。低いほうを使います"))
-                }
-                LabeledContent(loc("지금 적용 중인 상한", "Limit in effect", "現在の上限")) {
-                    Text(verbatim: "\(controller.effectiveLimit) (\(LimitText.source(controller)))")
-                        .monospacedDigit()
-                }
-            } header: {
-                Text(loc("상한", "Limit", "上限"))
-            } footer: {
-                Text(wrapping: loc("낮추기는 언제나 됩니다. 리모컨과 KEF Connect에서 바꾸는 음량은 제한하지 않습니다.", "Lowering always works. Volume changed with the remote or KEF Connect isn't limited.", "下げる操作はいつでもできます。リモコンやKEF Connectで変えた音量は制限しません。"))
-            }
-
-            Section(loc("음량 보정", "Volume Correction", "音量補正")) {
-                // Laid out by hand so the (i) button can sit right after the title.
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Text(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ"))
-                            ApproachInfoButton()
-                        }
-                        Text(loc("올릴 때 목표보다 살짝 높게 보낸 뒤 목표로 내립니다", "When raising, sends a slightly higher value first and then settles on the target", "上げるときは目標より少し高く送ってから目標に下げます"))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Toggle(loc("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ"), isOn: $model.approachFromAbove)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .frame(width: 500, height: 400)
-        .task { await model.refreshDeviceIfStale() }
-    }
-
-    private func deviceLimitText(_ controller: SpeakerController) -> String {
-        guard let device = controller.device else { return loc("연결 후 표시", "Shown once connected", "接続後に表示") }
-        return device.deviceVolumeLimit.map(String.init) ?? loc("꺼짐", "Off", "オフ")
     }
 }
 

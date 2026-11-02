@@ -49,7 +49,7 @@ sealed class App : Application, IXamlMetadataProvider
         if (options.Demo)
         {
             host = new AppHost(options with { Background = true }, Demo.CreateEnvironment());
-            _ = Demo.ShowAsync(host);
+            _ = Demo.ShowAsync(host, options.DemoSpeakers);
             return;
         }
         host = new AppHost(options);

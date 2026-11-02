@@ -18,13 +18,14 @@ namespace KefRemote.App.Views;
 /// <summary>
 /// Volume display at the bottom right of the monitor under the pointer (design W7). Never takes focus, so a
 /// hotkey pressed while typing elsewhere does not steal the keyboard. Wheel changes the volume, the speaker
-/// icon toggles mute.
+/// icon toggles mute. With more than one speaker the line under the bar names the one the keys work on.
 /// </summary>
 sealed class OsdView : IVolumeOsd
 {
     const double OsdWidth = 300, OsdHeight = 56, TallHeight = 74;
     const int EdgeMarginDip = 12, ShowMs = 1600, ErrorShowMs = 3200, FadeMs = 220;
 
+    readonly AppHost host;
     readonly Window window;
     readonly AppWindow appWindow;
     readonly Grid root, surface;
@@ -53,6 +54,7 @@ sealed class OsdView : IVolumeOsd
 
     public OsdView(AppHost host)
     {
+        this.host = host;
         var iconButton = new Button
         {
             Content = icon,
@@ -138,9 +140,11 @@ sealed class OsdView : IVolumeOsd
         icon.Glyph = Glyphs.ForVolume(level, content.Muted);
         PlaceLimitTick();
 
-        bool hasMessage = !string.IsNullOrEmpty(content.Message);
-        message.Text = Korean.KeepWords(content.Message ?? "");
-        message.Style = Ui.Style(content.IsError ? "KefCriticalText" : "KefSecondaryText");
+        // A message takes the line; otherwise, with several speakers, the name of the one being changed.
+        string? text = !string.IsNullOrEmpty(content.Message) ? content.Message : host.HasSeveral ? host.Selected?.Name : null;
+        bool hasMessage = !string.IsNullOrEmpty(text);
+        message.Text = Korean.KeepWords(text ?? "");
+        message.Style = Ui.Style(content.IsError && !string.IsNullOrEmpty(content.Message) ? "KefCriticalText" : "KefSecondaryText");
         message.FontSize = 11.5;
         message.Visibility = hasMessage ? Visibility.Visible : Visibility.Collapsed;
 

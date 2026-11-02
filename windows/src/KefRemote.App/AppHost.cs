@@ -21,18 +21,54 @@ sealed record HostEnvironment(string SettingsFolder, Func<DriverOptions, ISpeake
 }
 
 /// <summary>
-/// Application lifetime: owns the speaker controller, settings, tray icon, hotkeys and the surfaces
-/// (tray flyout with its media card, volume display, settings window). Everything runs on the UI thread.
+/// One registered speaker while the app runs: its saved entry, its own controller and how connecting to it went.
+/// Only the selected speaker listens for change reports and is polled; the others are read when the speaker list
+/// opens, so a house full of speakers costs no more network traffic than one.
+/// </summary>
+sealed class SpeakerSlot(SpeakerEntry entry)
+{
+    public SpeakerEntry Entry { get; } = entry;
+    public SpeakerController Controller { get; } = new() { ListenForChanges = false, PlaybackEnabled = false };
+    public string Id => Entry.Id;
+
+    /// <summary>The name for lists: what the speaker calls itself, else the last name it reported, else its address.</summary>
+    public string Name => Controller.Device?.Name is { Length: > 0 } name ? name : SpeakerList.DisplayName(Entry);
+
+    public bool Connecting { get; set; }
+
+    /// <summary>The address can't be used (not a private IPv4 address). Retrying won't help until it is changed.</summary>
+    public bool ConfigurationError { get; set; }
+
+    /// <summary>Consecutive failed connection attempts.</summary>
+    public int ConnectFailures { get; set; }
+
+    public long LastDeviceRefresh { get; set; }
+
+    /// <summary>The model the speaker is drawn as and whose finishes are listed (<see cref="KefModels.Shown"/>).</summary>
+    public string? ShownModel => KefModels.Shown(Controller.Device?.Model ?? Entry.Model, Entry.PickedModel);
+
+    /// <summary>The picked finish, if it is one of the shown model's.</summary>
+    public KefFinish? Finish => KefFinishes.Find(Entry.Finish, ShownModel);
+
+    /// <summary>Not reachable for now, as opposed to not tried yet.</summary>
+    public bool Unreachable => ConfigurationError || ConnectFailures > 0 || Controller.Phase == SpeakerPhase.Offline;
+}
+
+/// <summary>
+/// Application lifetime: owns the registered speakers, settings, tray icon, hotkeys and the surfaces
+/// (tray flyout with its media card and speaker list, volume display, settings window). Everything runs on the UI
+/// thread. The flyout, tray, shortcuts and volume display all work on the selected speaker.
 /// </summary>
 sealed class AppHost : IDisposable
 {
     static readonly int[] ReconnectBackoff = [2000, 5000, 10000, 30000];
-    const int DeviceRefreshMs = 30000, FreshOnOpenMs = 1000, IdleWaitMs = 3000;
+    const int DeviceRefreshMs = 30000, FreshOnOpenMs = 1000, IdleWaitMs = 3000, ListPollMs = 3000;
 
     readonly HostEnvironment environment;
     readonly SettingsStore store;
     readonly DispatcherQueue queue;
     readonly DispatcherQueueTimer pollTimer;
+    readonly DispatcherQueueTimer listTimer;
     readonly DispatcherQueueTimer updateTimer;
     readonly long startedAt = Environment.TickCount64;
     readonly MessageWindow messages;
@@ -44,40 +80,47 @@ sealed class AppHost : IDisposable
     readonly FlyoutView flyout;
     readonly OsdView osd;
     readonly MediaCardView mediaCard;
+    readonly List<SpeakerSlot> slots = [];
+    // Stands in while no speaker is registered, so the surfaces always have a controller to show.
+    readonly SpeakerController none = new() { ListenForChanges = false, PlaybackEnabled = false };
+    SpeakerSlot? selected;
     SettingsView? settingsWindow;
-    bool connecting;
-    bool configurationError;
-    long lastDeviceRefresh;
+    bool listOpen;
     bool hotkeyWarningShown;
     bool exiting;
 
     public AppSettings Settings { get; }
-    public SpeakerController Controller { get; } = new();
 
-    /// <summary>The model picked in settings for this speaker address, or null.</summary>
+    /// <summary>The selected speaker's controller.</summary>
+    public SpeakerController Controller => selected?.Controller ?? none;
+
+    /// <summary>The registered speakers, in the order they were added.</summary>
+    public IReadOnlyList<SpeakerSlot> Speakers => slots;
+    public SpeakerSlot? Selected => selected;
+
+    /// <summary>More than one speaker: the surfaces say which one they work on and offer to switch.</summary>
+    public bool HasSeveral => slots.Count > 1;
+
+    /// <summary>The model picked in settings for the selected speaker, or null.</summary>
     public string? PickedModel
     {
-        get => Settings.SpeakerModels.GetValueOrDefault(Settings.Host);
+        get => selected?.Entry.PickedModel;
         set
         {
-            if (value == null) Settings.SpeakerModels.Remove(Settings.Host);
-            else Settings.SpeakerModels[Settings.Host] = value;
+            if (selected != null) selected.Entry.PickedModel = value;
         }
     }
 
-    /// <summary>The model the speaker is drawn as and whose finishes are listed (<see cref="KefModels.Shown"/>).</summary>
-    public string? ShownModel => KefModels.Shown(Controller.Device?.Model, PickedModel);
-
-    /// <summary>The picked finish, if it is one of the shown model's.</summary>
-    public KefFinish? Finish => KefFinishes.Find(Settings.SpeakerFinish, ShownModel);
+    public string? ShownModel => selected?.ShownModel;
+    public KefFinish? Finish => selected?.Finish;
     public HotkeyManager Hotkeys { get; }
     public AppUpdater Updates { get; }
 
-    /// <summary>Consecutive failed connection attempts. The flyout shows "offline" instead of "connecting" while above 0.</summary>
-    public int ConnectFailures { get; private set; }
+    /// <summary>Failed connection attempts of the selected speaker. The flyout shows "offline" instead of "connecting" while above 0.</summary>
+    public int ConnectFailures => selected?.ConnectFailures ?? 0;
 
-    public bool IsConnecting => connecting;
-    public bool ConfigurationError => configurationError;
+    public bool IsConnecting => selected?.Connecting ?? false;
+    public bool ConfigurationError => selected?.ConfigurationError ?? false;
     public bool SelfTest => environment.SelfTest;
     public bool Demo => environment.Demo;
     public string SettingsFolder => store.Directory;
@@ -97,12 +140,12 @@ sealed class AppHost : IDisposable
         Log.Write($"started {typeof(AppHost).Assembly.GetName().Version}{(environment.SelfTest ? " (self-test)" : "")}, Windows {Environment.OSVersion.Version}");
         store = new SettingsStore(environment.SettingsFolder);
         Settings = store.Load();
+        if (SpeakerList.Migrate(Settings)) store.Save(Settings);
         queue = DispatcherQueue.GetForCurrentThread();
 
-        Controller.AppVolumeLimit = Settings.AppVolumeLimit;
-        Controller.ApproachFromAbove = Settings.ApproachFromAbove;
-        Controller.Changed += OnControllerChanged;
-        Controller.LastActiveSourceChanged += OnLastActiveSourceChanged;
+        foreach (var entry in SpeakerList.All(Settings)) slots.Add(CreateSlot(entry));
+        selected = Find(SpeakerList.Selected(Settings)?.Id);
+        if (selected != null) selected.Controller.ListenForChanges = true;
 
         messages = new MessageWindow();
         tray = new TrayIcon(messages, queue);
@@ -121,14 +164,18 @@ sealed class AppHost : IDisposable
                 Muted: Controller.State.Muted,
                 Limit: Controller.EffectiveLimit,
                 Status: Controller.IsReady ? Controller.Notice : Controller.Status),
-            setVolumeTarget: Controller.SetVolumeTargetAsync,
-            setMute: Controller.SetMuteAsync,
+            setVolumeTarget: target => Controller.SetVolumeTargetAsync(target),
+            setMute: muted => Controller.SetMuteAsync(muted),
             controllerBusy: () => Controller.Busy,
             osd: osd,
             runLater: RunLater);
         osd.Input += volumeKeys.Handle;
 
-        Hotkeys.Pressed += volumeKeys.Handle;
+        Hotkeys.Pressed += action =>
+        {
+            if (action == HotkeyAction.NextSpeaker) SelectNext();
+            else volumeKeys.Handle(action);
+        };
         Hotkeys.StatusChanged += () => Changed?.Invoke();
         ApplyPreferences();
         ApplyHotkeys();
@@ -136,6 +183,13 @@ sealed class AppHost : IDisposable
         pollTimer = queue.CreateTimer();
         pollTimer.IsRepeating = false;
         pollTimer.Tick += async (_, _) => await PollTickAsync();
+        listTimer = queue.CreateTimer();
+        listTimer.IsRepeating = false;
+        listTimer.Tick += async (_, _) =>
+        {
+            listTimer.Stop();
+            await RefreshListAsync();
+        };
 
         Updates = environment.SelfTest || environment.Demo ? AppUpdater.ForScreens(queue) : new AppUpdater(queue, enabled: true);
         Updates.Changed += () => Changed?.Invoke();
@@ -168,76 +222,203 @@ sealed class AppHost : IDisposable
         ScheduleUpdateCheck();
     }
 
+    // ---------- speakers ----------
+
+    SpeakerSlot CreateSlot(SpeakerEntry entry)
+    {
+        var slot = new SpeakerSlot(entry);
+        slot.Controller.AppVolumeLimit = entry.AppVolumeLimit;
+        slot.Controller.ApproachFromAbove = entry.ApproachFromAbove;
+        slot.Controller.Changed += () => OnControllerChanged(slot);
+        slot.Controller.LastActiveSourceChanged += source => OnLastActiveSourceChanged(slot, source);
+        return slot;
+    }
+
+    public SpeakerSlot? Find(string? id) => slots.FirstOrDefault(s => s.Id == id);
+
+    /// <summary>Makes <paramref name="slot"/> the speaker the flyout, tray and shortcuts work on.</summary>
+    public Task SelectAsync(SpeakerSlot slot)
+    {
+        if (slot == selected || !slots.Contains(slot)) return Task.CompletedTask;
+        if (selected != null)
+        {
+            selected.Controller.ListenForChanges = false;
+            selected.Controller.PlaybackEnabled = false;
+        }
+        selected = slot;
+        Settings.SelectedSpeaker = slot.Id;
+        store.Save(Settings);
+        slot.Controller.ListenForChanges = true;
+        slot.Controller.PlaybackEnabled = Settings.ShowNowPlaying;
+        volumeKeys.SpeakerChanged();
+        volumeKeys.Tolerance = slot.Controller.Driver?.VolumeTolerance ?? 0;
+        flyout.SpeakerChanged();
+        UpdateTray();
+        // Polling moves to this speaker; reading it now below comes first when it is stale.
+        ScheduleNextPoll();
+        Changed?.Invoke();
+        Log.Write("selected speaker " + slot.Id);
+        return slot.Controller.Device == null ? ConnectAsync(slot) : RefreshNowAsync();
+    }
+
+    /// <summary>The "next speaker" shortcut: switches and says so in the volume display.</summary>
+    public async void SelectNext()
+    {
+        if (SpeakerList.Next(Settings) is not { } entry || Find(entry.Id) is not { } next) return;
+        var refresh = SelectAsync(next);
+        bool known = next.Controller.IsReady;
+        ShowSelectedInOsd();
+        await refresh;
+        // Read for the first time just now: show the volume it is at.
+        if (!known && selected == next && next.Controller.IsReady) ShowSelectedInOsd();
+    }
+
+    void ShowSelectedInOsd()
+    {
+        var c = Controller;
+        // Shown even with the volume display turned off: it is the only sign that the shortcut did something.
+        osd.ShowLevel(new OsdContent(
+            Volume: c.IsReady ? c.State.Volume : null,
+            Muted: c.State.Muted,
+            Limit: c.EffectiveLimit,
+            Pending: false,
+            Message: c.IsReady || c.IsStandby ? null : SpeakerPresentation.ListStatus(c, selected?.Unreachable ?? false),
+            IsError: false));
+    }
+
+    /// <summary>Registers a speaker and connects to it. The first one becomes the selected one.</summary>
+    public async Task<SpeakerSlot> AddSpeakerAsync(string address, string password)
+    {
+        var entry = SpeakerList.Add(Settings, address, Secrets.Protect(password));
+        store.Save(Settings);
+        var slot = CreateSlot(entry);
+        slots.Add(slot);
+        Log.Write($"added speaker {entry.Id}, {slots.Count} registered");
+        if (selected == null)
+        {
+            selected = slot;
+            slot.Controller.ListenForChanges = true;
+            slot.Controller.PlaybackEnabled = Settings.ShowNowPlaying;
+            Settings.SelectedSpeaker = slot.Id;
+            store.Save(Settings);
+        }
+        Changed?.Invoke();
+        await ConnectAsync(slot);
+        return slot;
+    }
+
+    /// <summary>Saves a new address and password for a speaker and reconnects at once.</summary>
+    public Task UpdateConnectionAsync(SpeakerSlot slot, string address, string password)
+    {
+        slot.Entry.Host = address.Trim();
+        slot.Entry.ProtectedPassword = Secrets.Protect(password);
+        store.Save(Settings);
+        slot.ConnectFailures = 0;
+        slot.ConfigurationError = false;
+        return ConnectAsync(slot);
+    }
+
+    /// <summary>Saves a new address and password for the selected speaker, or adds the first one.</summary>
+    public Task ApplyConnectionAsync(string address, string password) =>
+        selected == null ? AddSpeakerAsync(address, password) : UpdateConnectionAsync(selected, address, password);
+
+    /// <summary>Forgets a speaker. When it was the selected one, the one before it takes over.</summary>
+    public void RemoveSpeaker(SpeakerSlot slot)
+    {
+        if (!SpeakerList.Remove(Settings, slot.Id)) return;
+        slots.Remove(slot);
+        store.Save(Settings);
+        Log.Write($"removed speaker {slot.Id}, {slots.Count} registered");
+        slot.Controller.Dispose();
+        if (selected == slot)
+        {
+            selected = null;
+            volumeKeys.SpeakerChanged();
+            pollTimer.Stop();
+            if (Find(SpeakerList.Selected(Settings)?.Id) is { } next)
+            {
+                _ = SelectAsync(next);
+                return;
+            }
+            none.Disconnect(EnterAddress);
+            flyout.SpeakerChanged();
+            UpdateTray();
+        }
+        Changed?.Invoke();
+    }
+
+    static string EnterAddress => Loc.T("스피커 주소를 입력하세요", "Enter the speaker address", "スピーカーのアドレスを入力してください");
+
     // ---------- connection ----------
 
-    public async Task ConnectAsync()
+    /// <summary>Connects to the selected speaker.</summary>
+    public Task ConnectAsync()
     {
-        if (connecting) return;
-        if (!Settings.IsConfigured)
+        if (selected != null) return ConnectAsync(selected);
+        none.Disconnect(EnterAddress);
+        return Task.CompletedTask;
+    }
+
+    public async Task ConnectAsync(SpeakerSlot slot)
+    {
+        if (slot.Connecting) return;
+        var c = slot.Controller;
+        if (!slot.Entry.IsConfigured)
         {
-            Controller.Disconnect(Loc.T("스피커 주소를 입력하세요", "Enter the speaker address", "スピーカーのアドレスを入力してください"));
+            c.Disconnect(EnterAddress);
             return;
         }
-        connecting = true;
-        pollTimer.Stop();
+        slot.Connecting = true;
+        if (slot == selected) pollTimer.Stop();
         try
         {
             ISpeakerDriver driver;
             try
             {
-                var driverOptions = new DriverOptions(HostAddress.ParseLocal(Settings.Host), Secrets.Unprotect(Settings.ProtectedPassword));
+                var driverOptions = new DriverOptions(HostAddress.ParseLocal(slot.Entry.Host), Secrets.Unprotect(slot.Entry.ProtectedPassword));
                 driver = environment.CreateDriver?.Invoke(driverOptions) ?? BuiltInDrivers.Find(Settings.DriverId).Create(driverOptions);
             }
             catch (SpeakerException e)
             {
                 // A bad address will not fix itself; wait for the user to change the settings.
-                configurationError = true;
-                Controller.Disconnect(e.Message);
+                slot.ConfigurationError = true;
+                c.Disconnect(e.Message);
                 return;
             }
-            configurationError = false;
-            bool ok = await Controller.ConnectAsync(driver, Settings.LastInputs.GetValueOrDefault(Settings.Host));
-            ConnectFailures = ok ? 0 : ConnectFailures + 1;
-            if (ok) lastDeviceRefresh = Environment.TickCount64;
+            slot.ConfigurationError = false;
+            bool ok = await c.ConnectAsync(driver, slot.Entry.LastInput);
+            slot.ConnectFailures = ok ? 0 : slot.ConnectFailures + 1;
+            if (ok) slot.LastDeviceRefresh = Environment.TickCount64;
         }
         finally
         {
-            connecting = false;
-            ScheduleNextPoll();
+            slot.Connecting = false;
+            if (slot == selected) ScheduleNextPoll();
             Changed?.Invoke();
         }
     }
 
-    /// <summary>Saves a new address and password and reconnects at once.</summary>
-    public Task ApplyConnectionAsync(string host, string password)
-    {
-        Settings.Host = host.Trim();
-        Settings.ProtectedPassword = Secrets.Protect(password);
-        store.Save(Settings);
-        ConnectFailures = 0;
-        configurationError = false;
-        return ConnectAsync();
-    }
-
     /// <summary>"Try again" from the flyout or settings: skip the backoff.</summary>
-    public Task ReconnectAsync()
+    public Task ReconnectAsync() => selected == null ? Task.CompletedTask : ReconnectAsync(selected);
+
+    public Task ReconnectAsync(SpeakerSlot slot)
     {
-        ConnectFailures = 0;
-        return ConnectAsync();
+        slot.ConnectFailures = 0;
+        return ConnectAsync(slot);
     }
 
     async Task PollTickAsync()
     {
         pollTimer.Stop();
-        if (!connecting && !exiting)
+        if (selected is { } slot && !slot.Connecting && !exiting)
         {
-            if (Controller.Driver == null || Controller.Device == null)
+            if (slot.Controller.Driver == null || slot.Controller.Device == null)
             {
-                if (Settings.IsConfigured && !configurationError) await ConnectAsync();
+                if (slot.Entry.IsConfigured && !slot.ConfigurationError) await ConnectAsync(slot);
             }
             else
             {
-                await Controller.PollAsync();
+                await slot.Controller.PollAsync();
             }
         }
         ScheduleNextPoll();
@@ -245,11 +426,12 @@ sealed class AppHost : IDisposable
 
     void ScheduleNextPoll()
     {
-        if (exiting) return;
+        pollTimer.Stop();
+        if (exiting || selected is not { } slot) return;
         bool visible = flyout.IsVisible || settingsWindow != null;
-        TimeSpan delay = Controller.Device == null
-            ? TimeSpan.FromMilliseconds(ReconnectBackoff[Math.Clamp(ConnectFailures - 1, 0, ReconnectBackoff.Length - 1)])
-            : Controller.NextPollDelay(visible);
+        TimeSpan delay = slot.Controller.Device == null
+            ? TimeSpan.FromMilliseconds(ReconnectBackoff[Math.Clamp(slot.ConnectFailures - 1, 0, ReconnectBackoff.Length - 1)])
+            : slot.Controller.NextPollDelay(visible);
         pollTimer.Interval = delay;
         pollTimer.Start();
     }
@@ -257,35 +439,108 @@ sealed class AppHost : IDisposable
     /// <summary>Read now when the numbers on screen might be old, e.g. when the flyout opens.</summary>
     public async Task RefreshNowAsync()
     {
-        if (connecting || Controller.Busy || Controller.Device == null) return;
-        if (Environment.TickCount64 - lastDeviceRefresh > DeviceRefreshMs)
+        if (selected is not { } slot) return;
+        var c = slot.Controller;
+        if (slot.Connecting || c.Busy || c.Device == null) return;
+        if (Environment.TickCount64 - slot.LastDeviceRefresh > DeviceRefreshMs)
         {
             // Picks up a maximum volume changed in KEF Connect. Read only.
-            lastDeviceRefresh = Environment.TickCount64;
-            await Controller.RefreshDeviceAsync();
+            slot.LastDeviceRefresh = Environment.TickCount64;
+            await c.RefreshDeviceAsync();
         }
-        if (Controller.Busy) return;
-        long age = Controller.Clock() - Controller.State.SeenAt;
-        if (!Controller.State.Valid || age > FreshOnOpenMs)
+        if (c.Busy || selected != slot) return;
+        long age = c.Clock() - c.State.SeenAt;
+        if (!c.State.Valid || age > FreshOnOpenMs)
         {
             pollTimer.Stop();
-            await Controller.PollAsync();
-            ScheduleNextPoll();
+            await c.PollAsync();
+            if (selected == slot) ScheduleNextPoll();
         }
+    }
+
+    /// <summary>
+    /// The speaker list opened or closed. While it is open the speakers that are not selected are read every few
+    /// seconds so their rows stay true; while it is closed they are left alone.
+    /// </summary>
+    public void SetListOpen(bool open)
+    {
+        listOpen = open;
+        listTimer.Stop();
+        if (open) _ = RefreshListAsync();
+    }
+
+    /// <summary>Connects to or reads every speaker but the selected one, which is kept up to date anyway.</summary>
+    public async Task RefreshListAsync()
+    {
+        listTimer.Stop();
+        var others = slots.Where(s => s != selected).ToList();
+        await Task.WhenAll(others.Select(RefreshOtherAsync));
+        if (listOpen && !exiting)
+        {
+            listTimer.Interval = TimeSpan.FromMilliseconds(ListPollMs);
+            listTimer.Start();
+        }
+    }
+
+    /// <summary>Reads one speaker now, e.g. when its settings page opens: the device too, for a changed maximum volume.</summary>
+    public async Task RefreshSpeakerAsync(SpeakerSlot slot)
+    {
+        if (slot == selected)
+        {
+            if (slot.Controller.Device == null) await ConnectAsync(slot);
+            else await RefreshNowAsync();
+            return;
+        }
+        var c = slot.Controller;
+        if (c.Device != null && !c.Busy)
+        {
+            slot.LastDeviceRefresh = Environment.TickCount64;
+            await c.RefreshDeviceAsync();
+        }
+        await RefreshOtherAsync(slot);
+    }
+
+    async Task RefreshOtherAsync(SpeakerSlot slot)
+    {
+        var c = slot.Controller;
+        if (slot.Connecting || slot.ConfigurationError || c.Busy) return;
+        if (c.Driver == null || c.Device == null) await ConnectAsync(slot);
+        else await c.PollAsync();
+    }
+
+    /// <summary>The power switch of a row in the speaker list. Leaves the selection as it is.</summary>
+    public async Task SetPowerAsync(SpeakerSlot slot, bool on)
+    {
+        var c = slot.Controller;
+        if (c.Device == null) await ConnectAsync(slot);
+        await RunWhenIdle(c, () => on ? c.PowerOnAsync() : c.PowerOffAsync());
+    }
+
+    /// <summary>"Turn all off": puts every speaker that is on in standby, the ones not read yet included.</summary>
+    public async Task TurnAllOffAsync()
+    {
+        await Task.WhenAll(slots.ToList().Select(async slot =>
+        {
+            var c = slot.Controller;
+            if (c.Device == null && !slot.ConfigurationError) await ConnectAsync(slot);
+            if (c.Phase == SpeakerPhase.On && c.Supports(DriverCapabilities.Power)) await RunWhenIdle(c, c.PowerOffAsync);
+        }));
     }
 
     /// <summary>
     /// Runs a command from a click. A background read makes the controller drop commands, so wait for it briefly
     /// instead of losing the click. Another running command still wins.
     /// </summary>
-    public async Task RunWhenIdle(Func<Task> command)
+    public Task RunWhenIdle(Func<Task> command) => RunWhenIdle(Controller, command);
+
+    public async Task RunWhenIdle(SpeakerController c, Func<Task> command)
     {
-        for (int waited = 0; Controller.Busy && Controller.Operation == SpeakerOperation.None; waited += 40)
+        for (int waited = 0; c.Busy && c.Operation == SpeakerOperation.None; waited += 40)
         {
             if (waited > IdleWaitMs) return;
             await Task.Delay(40);
         }
-        if (Controller.Busy) return;
+        if (c.Busy) return;
         try
         {
             await command();
@@ -307,11 +562,15 @@ sealed class AppHost : IDisposable
 
     void ApplyPreferences()
     {
-        Controller.AppVolumeLimit = Settings.AppVolumeLimit;
-        Controller.ApproachFromAbove = Settings.ApproachFromAbove;
+        foreach (var slot in slots)
+        {
+            slot.Entry.AppVolumeLimit = Math.Clamp(slot.Entry.AppVolumeLimit, 1, 100);
+            slot.Controller.AppVolumeLimit = slot.Entry.AppVolumeLimit;
+            slot.Controller.ApproachFromAbove = slot.Entry.ApproachFromAbove;
+            slot.Controller.PlaybackEnabled = slot == selected && Settings.ShowNowPlaying;
+        }
         volumeKeys.Step = Settings.HotkeyVolumeStep;
         volumeKeys.OsdEnabled = Settings.ShowVolumeOsd;
-        Controller.PlaybackEnabled = Settings.ShowNowPlaying;
     }
 
     /// <summary>Registers the saved shortcuts. Returns the outcome per action.</summary>
@@ -377,16 +636,16 @@ sealed class AppHost : IDisposable
 
     public void ShowFlyout() => flyout.Show(TrayAnchor(null));
 
-    public SettingsView OpenSettings(SettingsPage page = SettingsPage.General)
+    public SettingsView OpenSettings(SettingsPage page = SettingsPage.General, SpeakerSlot? speaker = null)
     {
         flyout.Hide();
         if (settingsWindow == null)
         {
-            settingsWindow = new SettingsView(this, page);
+            settingsWindow = new SettingsView(this, page, speaker);
             settingsWindow.Closed += OnSettingsClosed;
             ScheduleNextPoll();
         }
-        settingsWindow.Show(page);
+        settingsWindow.Show(page, speaker);
         return settingsWindow;
     }
 
@@ -425,21 +684,32 @@ sealed class AppHost : IDisposable
         return WindowHelpers.CursorPosition();
     }
 
-    void OnControllerChanged()
+    void OnControllerChanged(SpeakerSlot slot)
     {
-        volumeKeys.Tolerance = Controller.Driver?.VolumeTolerance ?? 0;
-        UpdateTray();
+        // Kept so the list can name the speaker and draw its model while it is off or away.
+        if (slot.Controller.Device is { } device && (slot.Entry.Name != device.Name || slot.Entry.Model != device.Model))
+        {
+            slot.Entry.Name = device.Name;
+            slot.Entry.Model = device.Model;
+            store.Save(Settings);
+        }
+        if (slot == selected)
+        {
+            volumeKeys.Tolerance = slot.Controller.Driver?.VolumeTolerance ?? 0;
+            UpdateTray();
+        }
         Changed?.Invoke();
     }
 
-    void OnLastActiveSourceChanged(string source)
+    void OnLastActiveSourceChanged(SpeakerSlot slot, string source)
     {
-        if (!Settings.IsConfigured || Settings.LastInputs.GetValueOrDefault(Settings.Host) == source) return;
-        Settings.LastInputs[Settings.Host] = source;
+        if (slot.Entry.LastInput == source || !slots.Contains(slot)) return;
+        slot.Entry.LastInput = source;
         store.Save(Settings);
     }
 
-    void UpdateTray() => tray.Update(SpeakerPresentation.Glyph(Controller), SpeakerPresentation.Tooltip(Controller, Settings.IsConfigured));
+    void UpdateTray() => tray.Update(SpeakerPresentation.Glyph(Controller),
+        SpeakerPresentation.Tooltip(Controller, Settings.IsConfigured, selected?.Name));
 
     void WarnHotkeysOnce()
     {
@@ -481,6 +751,7 @@ sealed class AppHost : IDisposable
     {
         exiting = true;
         pollTimer.Stop();
+        listTimer.Stop();
         updateTimer.Stop();
         foreach (var t in laterTimers) t.Stop();
         laterTimers.Clear();
@@ -494,6 +765,7 @@ sealed class AppHost : IDisposable
         volumeKeys.Dispose();
         tray.Dispose();
         messages.Dispose();
-        Controller.Dispose();
+        foreach (var slot in slots) slot.Controller.Dispose();
+        none.Dispose();
     }
 }

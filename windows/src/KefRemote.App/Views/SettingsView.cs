@@ -21,14 +21,14 @@ public enum SettingsPage
 {
     General,
     Speaker,
-    Volume,
     Hotkeys,
     About,
 }
 
 /// <summary>
 /// Settings window in the shape of Windows 11 Settings (design W6): navigation on the left, rows as cards.
-/// Changes apply at once; only the speaker address waits for Connect.
+/// Changes apply at once; only the speaker address waits for Connect. The speaker page lists the speakers and opens
+/// one per page with everything that belongs to it: address, model and finish, volume limit and correction.
 /// </summary>
 sealed class SettingsView
 {
@@ -43,6 +43,9 @@ sealed class SettingsView
     readonly Dictionary<SettingsPage, NavigationViewItem> items = [];
     readonly Grid rootGrid;
     SettingsPage current;
+    // On the speaker page: the speaker shown, or adding one when null with adding set, else the list.
+    SpeakerSlot? speakerDetail;
+    bool addingSpeaker;
     Action? refreshPage;
     bool updating;
     bool navigating;
@@ -52,7 +55,7 @@ sealed class SettingsView
     /// <summary>The window content, for self-test captures.</summary>
     public FrameworkElement Root => rootGrid;
 
-    public SettingsView(AppHost host, SettingsPage page)
+    public SettingsView(AppHost host, SettingsPage page, SpeakerSlot? speaker = null)
     {
         this.host = host;
 
@@ -69,13 +72,18 @@ sealed class SettingsView
             Content = scroller,
         };
         AddItem(SettingsPage.General, Loc.T("일반", "General", "一般"), Glyphs.Home);
-        AddItem(SettingsPage.Speaker, Loc.T("스피커", "Speaker", "スピーカー"), Glyphs.Speaker);
-        AddItem(SettingsPage.Volume, Loc.T("음량", "Volume", "音量"), Glyphs.Volume);
+        AddItem(SettingsPage.Speaker, Loc.T("스피커", "Speakers", "スピーカー"), Glyphs.Speaker);
         AddItem(SettingsPage.Hotkeys, Loc.T("단축키", "Shortcuts", "ショートカット"), Glyphs.Keyboard);
         AddItem(SettingsPage.About, Loc.T("정보", "About", "バージョン情報"), Glyphs.Info);
         nav.SelectionChanged += (_, e) =>
         {
             if (!navigating && e.SelectedItem is NavigationViewItem { Tag: SettingsPage p }) Navigate(p);
+        };
+        // Picking "Speakers" while a speaker's page is open goes back to the list, as in Windows Settings.
+        nav.ItemInvoked += (_, e) =>
+        {
+            if (e.InvokedItemContainer is NavigationViewItem { Tag: SettingsPage.Speaker } && current == SettingsPage.Speaker && (speakerDetail != null || addingSpeaker))
+                ShowSpeakerList();
         };
 
         rootGrid = new Grid();
@@ -100,7 +108,9 @@ sealed class SettingsView
             host.Changed -= OnHostChanged;
             Closed?.Invoke();
         };
-        Navigate(page);
+        current = page;
+        speakerDetail = speaker;
+        Render();
     }
 
     void AddItem(SettingsPage page, string text, string glyph)
@@ -118,9 +128,12 @@ sealed class SettingsView
         appWindow.MoveAndResize(new RectInt32(work.X + (work.Width - w) / 2, work.Y + (work.Height - h) / 2, w, h));
     }
 
-    public void Show(SettingsPage page)
+    public void Show(SettingsPage page, SpeakerSlot? speaker = null)
     {
-        Navigate(page);
+        current = page;
+        speakerDetail = page == SettingsPage.Speaker ? speaker : null;
+        addingSpeaker = false;
+        Render();
         appWindow.Show(true);
         window.Activate();
     }
@@ -129,16 +142,27 @@ sealed class SettingsView
 
     public SettingsPage Current => current;
 
+    /// <summary>A page from the navigation pane. The speaker page opens on its list.</summary>
     public void Navigate(SettingsPage page)
     {
+        if (page != current)
+        {
+            speakerDetail = null;
+            addingSpeaker = false;
+        }
         current = page;
+        Render();
+    }
+
+    void Render()
+    {
+        var page = current;
         navigating = true;
         nav.SelectedItem = items[page];
         navigating = false;
         var (content, refresh) = page switch
         {
             SettingsPage.Speaker => SpeakerPage(),
-            SettingsPage.Volume => VolumePage(),
             SettingsPage.Hotkeys => HotkeysPage(),
             SettingsPage.About => AboutPage(),
             _ => GeneralPage(),
@@ -149,7 +173,22 @@ sealed class SettingsView
         scroller.Content = page_;
         scroller.ChangeView(null, 0, null, true);
         Refresh();
-        if (page == SettingsPage.Volume) _ = host.RefreshNowAsync();
+        // Picks up a maximum volume changed in KEF Connect, and reads a speaker that isn't the selected one.
+        if (page == SettingsPage.Speaker && speakerDetail != null) _ = host.RefreshSpeakerAsync(speakerDetail);
+    }
+
+    void ShowSpeakerList() => ShowSpeakerPage(null, adding: false);
+
+    void ShowSpeaker(SpeakerSlot slot) => ShowSpeakerPage(slot, adding: false);
+
+    void ShowAddSpeaker() => ShowSpeakerPage(null, adding: true);
+
+    void ShowSpeakerPage(SpeakerSlot? slot, bool adding)
+    {
+        current = SettingsPage.Speaker;
+        speakerDetail = slot;
+        addingSpeaker = adding;
+        Render();
     }
 
     void OnHostChanged() => Refresh();
@@ -279,37 +318,196 @@ sealed class SettingsView
         return plus > 0 ? version[..plus] : version;
     }
 
-    // ---------- Speaker ----------
+    // ---------- Speakers ----------
 
     (UIElement, Action?) SpeakerPage()
     {
-        var hostBox = new TextBox { Text = host.Settings.Host, PlaceholderText = Loc.T("예: 192.168.0.20", "e.g. 192.168.0.20", "例: 192.168.0.20"), Width = 240 };
-        var passwordBox = new PasswordBox { Password = Secrets.Unprotect(host.Settings.ProtectedPassword), Width = 240, PlaceholderText = Loc.T("설정하지 않았다면 비워 두세요", "Leave empty if you haven't set one", "設定していなければ空欄") };
-        var connect = Ui.AccentButton(Loc.T("연결", "Connect", "接続"));
+        if (speakerDetail != null && host.Speakers.Contains(speakerDetail)) return SpeakerDetailPage(speakerDetail);
+        speakerDetail = null;
+        // One speaker: its page is the speaker page, as before there could be several.
+        if (!addingSpeaker && host.Speakers.Count == 1) return SpeakerDetailPage(host.Speakers[0]);
+        // With no speaker yet the page is the form for the first one, as before there could be several.
+        if (addingSpeaker || host.Speakers.Count == 0) return AddSpeakerPage(first: host.Speakers.Count == 0);
+        return SpeakerListPage();
+    }
+
+    static string SpeakersTitle => Loc.T("스피커", "Speakers", "スピーカー");
+
+    /// <summary>Windows Settings' "Sound > Output" list: one row per speaker, each opening its own page.</summary>
+    (UIElement, Action?) SpeakerListPage()
+    {
+        var add = new Button { Content = Ui.Row(8, Ui.Icon(Glyphs.Add, 14), new TextBlock { Text = Loc.T("스피커 추가", "Add a speaker", "スピーカーを追加") }) };
+        add.Click += (_, _) => ShowAddSpeaker();
+        var rows = Ui.Column(4);
+        var panel = Ui.Column(4,
+            Ui.PageTitle(SpeakersTitle),
+            Ui.Card(Glyphs.Speaker, Loc.T("선택한 스피커", "Selected speaker", "選択中のスピーカー"),
+                Loc.T("플라이아웃, 알림 영역 아이콘, 단축키는 선택한 스피커를 조작합니다. 플라이아웃에서 스피커 이름을 눌러 바꿉니다.", "The flyout, the notification area icon and the shortcuts work on the selected speaker. Select the speaker's name in the flyout to switch.", "フライアウト、通知領域のアイコン、ショートカットは選択中のスピーカーを操作します。フライアウトでスピーカー名を押すと切り替えられます。"),
+                add),
+            Ui.GroupHeader(Loc.T("등록한 스피커", "Your speakers", "登録したスピーカー")),
+            rows);
+
+        var built = new List<(SpeakerSlot slot, ContentPresenter icon, TextBlock name, TextBlock detail, TextBlock state)>();
+        foreach (var slot in host.Speakers)
+        {
+            var icon = new ContentPresenter { Width = 32, Height = 32, VerticalAlignment = VerticalAlignment.Center };
+            var name = new TextBlock { FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis };
+            var detail = Ui.Secondary("");
+            var state = Ui.Secondary("");
+            state.VerticalAlignment = VerticalAlignment.Center;
+            var chevronIcon = Ui.Icon(Glyphs.ChevronRight, 12);
+            chevronIcon.VerticalAlignment = VerticalAlignment.Center;
+            var text = Ui.Column(2, name, detail);
+            text.VerticalAlignment = VerticalAlignment.Center;
+            var grid = Ui.Columns(16, (Ui.Auto, icon), (Ui.Star, text), (Ui.Auto, state), (Ui.Auto, chevronIcon));
+            var button = new Button
+            {
+                Content = grid,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Padding = new Thickness(16, 12, 16, 12),
+                MinHeight = 68,
+            };
+            button.Click += (_, _) => ShowSpeaker(slot);
+            rows.Children.Add(button);
+            built.Add((slot, icon, name, detail, state));
+        }
+
+        void Refresh()
+        {
+            foreach (var (slot, icon, name, detail, state) in built)
+            {
+                name.Text = slot.Name;
+                var c = slot.Controller;
+                bool reachable = c.Phase is SpeakerPhase.On or SpeakerPhase.Standby;
+                string model = c.Device?.Model ?? slot.Entry.Model ?? slot.Entry.Host;
+                detail.Text = slot.Unreachable && !reachable ? SpeakerPresentation.NotReachable : model;
+                detail.Style = Ui.Style(slot.Unreachable && !reachable ? "KefCriticalText" : "KefSecondaryText");
+                detail.FontSize = 12;
+                state.Text = slot == host.Selected ? Loc.T("선택됨", "Selected", "選択中") : "";
+                icon.Content = Ui.AppGlyph(32, slot.Finish, slot.ShownModel);
+                AutomationPropertiesName(icon, slot.Name);
+            }
+        }
+        return (panel, Refresh);
+    }
+
+    static void AutomationPropertiesName(UIElement element, string name) =>
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(element, name);
+
+    /// <summary>The page title as Windows Settings writes a subpage: "Speakers > name", the first part going back.</summary>
+    BreadcrumbBar Breadcrumb(string here)
+    {
+        var bar = new BreadcrumbBar { ItemsSource = new[] { SpeakersTitle, here }, Margin = new Thickness(0, 4, 0, 16) };
+        bar.Resources["BreadcrumbBarItemThemeFontSize"] = 28.0;
+        bar.Resources["BreadcrumbBarChevronFontSize"] = 16.0;
+        bar.Resources["BreadcrumbBarItemFontWeight"] = FontWeights.SemiBold;
+        bar.ItemClicked += (_, e) =>
+        {
+            if (e.Index == 0) ShowSpeakerList();
+        };
+        return bar;
+    }
+
+    /// <summary>Address and password, then Connect. The first speaker's form is the whole page.</summary>
+    (UIElement, Action?) AddSpeakerPage(bool first)
+    {
+        var (form, hostBox, passwordBox, connect, inputError) = ConnectionCards(Loc.T("추가", "Add", "追加"), "", "");
+        connect.Click += async (_, _) => await Add();
+        KeyEventHandler enter = async (_, e) =>
+        {
+            if (e.Key != VirtualKey.Enter) return;
+            e.Handled = true;
+            await Add();
+        };
+        hostBox.KeyDown += enter;
+        passwordBox.KeyDown += enter;
+
+        async Task Add()
+        {
+            if (!CheckAddress(hostBox.Text, inputError, null)) return;
+            connect.IsEnabled = false;
+            try
+            {
+                var slot = await host.AddSpeakerAsync(hostBox.Text, passwordBox.Password);
+                ShowSpeaker(slot);
+            }
+            finally
+            {
+                connect.IsEnabled = true;
+            }
+        }
+
+        var panel = Ui.Column(4,
+            first ? Ui.PageTitle(SpeakersTitle) : Breadcrumb(Loc.T("스피커 추가", "Add a speaker", "スピーカーを追加")));
+        foreach (var card in form) panel.Children.Add(card);
+        panel.Children.Add(AddressHint());
+        return (panel, null);
+    }
+
+    static TextBlock AddressHint()
+    {
+        var hint = Ui.Secondary(Loc.T("IP 주소는 KEF Connect 앱의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다. 공유기에서 이 스피커에 고정 IP를 지정해 두면 주소가 바뀌지 않습니다.", "You can find the IP address in the speaker info of the KEF Connect app or on your router's admin page. Reserve a fixed IP for this speaker on the router so the address doesn't change.", "IPアドレスはKEF Connectアプリのスピーカー情報やルーターの管理画面で確認できます。ルーターでこのスピーカーに固定IPを割り当てておくと、アドレスが変わりません。"), 12.5);
+        hint.Margin = new Thickness(2, 12, 0, 0);
+        return hint;
+    }
+
+    bool CheckAddress(string address, TextBlock error, SpeakerSlot? self)
+    {
+        string? problem = null;
+        try
+        {
+            HostAddress.ParseLocal(address);
+        }
+        catch (SpeakerException e)
+        {
+            problem = e.Message;
+        }
+        if (problem == null && SpeakerList.WithHost(host.Settings, address, self?.Id) is { } other)
+            problem = Loc.T($"이미 추가한 스피커입니다: {SpeakerList.DisplayName(other)}", $"Already added: {SpeakerList.DisplayName(other)}", $"すでに追加したスピーカーです: {SpeakerList.DisplayName(other)}");
+        error.Text = Korean.KeepWords(problem ?? "");
+        error.Visibility = problem == null ? Visibility.Collapsed : Visibility.Visible;
+        return problem == null;
+    }
+
+    (List<UIElement> cards, TextBox hostBox, PasswordBox passwordBox, Button connect, TextBlock inputError) ConnectionCards(string action, string address, string password, UIElement? status = null)
+    {
+        var hostBox = new TextBox { Text = address, PlaceholderText = Loc.T("예: 192.168.0.20", "e.g. 192.168.0.20", "例: 192.168.0.20"), Width = 240 };
+        var passwordBox = new PasswordBox { Password = password, Width = 240, PlaceholderText = Loc.T("설정하지 않았다면 비워 두세요", "Leave empty if you haven't set one", "設定していなければ空欄") };
+        var connect = Ui.AccentButton(action);
         var inputError = Ui.Text("", 12, style: "KefCriticalText");
         inputError.Visibility = Visibility.Collapsed;
+        var cards = new List<UIElement>
+        {
+            Ui.Card(Glyphs.Network, Loc.T("IP 주소", "IP address", "IPアドレス"), Loc.T("스피커의 사설 네트워크 IPv4 주소", "The speaker's private network IPv4 address", "スピーカーのプライベートネットワークのIPv4アドレス"), hostBox),
+            Ui.Card(Glyphs.Limit, Loc.T("기기 웹페이지 암호", "Device web page password", "機器のWebページのパスワード"), Loc.T("KEF Connect에서 기기 암호를 설정한 경우에만 입력합니다. 이 PC의 사용자 계정으로 암호화해 저장합니다.", "Enter it only if you set a device password in KEF Connect. It's stored encrypted with your user account on this PC.", "KEF Connectで機器のパスワードを設定した場合にだけ入力します。このPCのユーザーアカウントで暗号化して保存します。"), passwordBox),
+            new Border
+            {
+                Style = Ui.Style("KefCard"),
+                Child = status == null ? connect : Ui.Columns(12, (Ui.Auto, connect), (Ui.Star, status)),
+            },
+            inputError,
+        };
+        return (cards, hostBox, passwordBox, connect, inputError);
+    }
+
+    /// <summary>One speaker: connection, device, volume limit and correction, and removing it.</summary>
+    (UIElement, Action?) SpeakerDetailPage(SpeakerSlot slot)
+    {
         var dot = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         var ring = new ProgressRing { Width = 16, Height = 16, MinWidth = 0, MinHeight = 0, IsActive = false, Visibility = Visibility.Collapsed };
         var statusText = new TextBlock { FontSize = 13, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap, MaxWidth = 520 };
+        var (form, hostBox, passwordBox, connect, inputError) = ConnectionCards(Loc.T("연결", "Connect", "接続"),
+            slot.Entry.Host, Secrets.Unprotect(slot.Entry.ProtectedPassword), Ui.Row(8, ring, dot, statusText));
         var deviceCards = Ui.Column(4);
 
         async Task Connect()
         {
-            try
-            {
-                HostAddress.ParseLocal(hostBox.Text);
-            }
-            catch (SpeakerException e)
-            {
-                inputError.Text = Korean.KeepWords(e.Message);
-                inputError.Visibility = Visibility.Visible;
-                return;
-            }
-            inputError.Visibility = Visibility.Collapsed;
+            if (!CheckAddress(hostBox.Text, inputError, slot)) return;
             connect.IsEnabled = false;
             try
             {
-                await host.ApplyConnectionAsync(hostBox.Text, passwordBox.Password);
+                await host.UpdateConnectionAsync(slot, hostBox.Text, passwordBox.Password);
             }
             finally
             {
@@ -326,37 +524,49 @@ sealed class SettingsView
         hostBox.KeyDown += enter;
         passwordBox.KeyDown += enter;
 
-        var panel = Ui.Column(4,
-            Ui.PageTitle(Loc.T("스피커", "Speaker", "スピーカー")),
-            Ui.Card(Glyphs.Network, Loc.T("IP 주소", "IP address", "IPアドレス"), Loc.T("스피커의 사설 네트워크 IPv4 주소", "The speaker's private network IPv4 address", "スピーカーのプライベートネットワークのIPv4アドレス"), hostBox),
-            Ui.Card(Glyphs.Limit, Loc.T("기기 웹페이지 암호", "Device web page password", "機器のWebページのパスワード"), Loc.T("KEF Connect에서 기기 암호를 설정한 경우에만 입력합니다. 이 PC의 사용자 계정으로 암호화해 저장합니다.", "Enter it only if you set a device password in KEF Connect. It's stored encrypted with your user account on this PC.", "KEF Connectで機器のパスワードを設定した場合にだけ入力します。このPCのユーザーアカウントで暗号化して保存します。"), passwordBox),
-            new Border
-            {
-                Style = Ui.Style("KefCard"),
-                Child = Ui.Columns(12, (Ui.Auto, connect), (Ui.Star, Ui.Row(8, ring, dot, statusText))),
-            },
-            inputError,
-            Ui.GroupHeader(Loc.T("기기 정보", "Device info", "機器情報")),
-            deviceCards,
-            Ui.Secondary(Loc.T("IP 주소는 KEF Connect 앱의 스피커 정보나 공유기 관리 화면에서 확인할 수 있습니다. 공유기에서 이 스피커에 고정 IP를 지정해 두면 주소가 바뀌지 않습니다.", "You can find the IP address in the speaker info of the KEF Connect app or on your router's admin page. Reserve a fixed IP for this speaker on the router so the address doesn't change.", "IPアドレスはKEF Connectアプリのスピーカー情報やルーターの管理画面で確認できます。ルーターでこのスピーカーに固定IPを割り当てておくと、アドレスが変わりません。"), 12.5));
-        ((FrameworkElement)panel.Children[^1]).Margin = new Thickness(2, 12, 0, 0);
+        var breadcrumb = Breadcrumb(slot.Name);
+        var panel = Ui.Column(4, host.HasSeveral ? breadcrumb : Ui.PageTitle(SpeakersTitle));
+        if (!host.HasSeveral)
+        {
+            // One speaker: the page reads as before, with adding another at the top.
+            var add = new Button { Content = Ui.Row(8, Ui.Icon(Glyphs.Add, 14), new TextBlock { Text = Loc.T("스피커 추가", "Add a speaker", "スピーカーを追加") }) };
+            add.Click += (_, _) => ShowAddSpeaker();
+            panel.Children.Add(Ui.Card(Glyphs.Speaker, Loc.T("다른 방의 스피커", "Speakers in other rooms", "ほかの部屋のスピーカー"),
+                Loc.T("스피커를 더 추가하면 플라이아웃에서 이름을 눌러 바꿀 수 있습니다", "Add more speakers to switch between them from the name in the flyout", "スピーカーを追加すると、フライアウトで名前を押して切り替えられます"), add));
+            panel.Children.Add(Ui.GroupHeader(Loc.T("연결", "Connection", "接続")));
+        }
+        foreach (var card in form) panel.Children.Add(card);
+        panel.Children.Add(Ui.GroupHeader(Loc.T("기기 정보", "Device info", "機器情報")));
+        panel.Children.Add(deviceCards);
+        var (volumeCards, refreshVolume) = VolumeCards(slot);
+        panel.Children.Add(Ui.GroupHeader(Loc.T("음량", "Volume", "音量")));
+        panel.Children.Add(volumeCards);
+        panel.Children.Add(Ui.GroupHeader(Loc.T("스피커 삭제", "Remove speaker", "スピーカーの削除")));
+        panel.Children.Add(RemoveCard(slot));
+        panel.Children.Add(AddressHint());
 
         string deviceSignature = "-";
         var finishSlot = Ui.Column(0);
         string? finishModel = null;
         void Refresh()
         {
-            var c = host.Controller;
-            bool configured = host.Settings.IsConfigured;
-            ring.IsActive = host.IsConnecting;
-            ring.Visibility = host.IsConnecting ? Visibility.Visible : Visibility.Collapsed;
-            dot.Visibility = host.IsConnecting ? Visibility.Collapsed : Visibility.Visible;
-            (string style, string text) = host.IsConnecting ? ("KefDotNeutral", Loc.T("연결하는 중", "Connecting", "接続中"))
-                : !configured ? ("KefDotNeutral", Loc.T("주소를 입력하고 연결을 누르세요", "Enter the address and select Connect", "アドレスを入力して［接続］を押してください"))
+            if (!host.Speakers.Contains(slot))
+            {
+                window.DispatcherQueue.TryEnqueue(ShowSpeakerList);
+                return;
+            }
+            var c = slot.Controller;
+            breadcrumb.ItemsSource = new[] { SpeakersTitle, slot.Name };
+            ring.IsActive = slot.Connecting;
+            ring.Visibility = slot.Connecting ? Visibility.Visible : Visibility.Collapsed;
+            dot.Visibility = slot.Connecting ? Visibility.Collapsed : Visibility.Visible;
+            (string style, string text) = slot.Connecting ? ("KefDotNeutral", Loc.T("연결하는 중", "Connecting", "接続中"))
                 : c.Phase switch
                 {
                     SpeakerPhase.On => ("KefDotSuccess", Loc.T("연결됨", "Connected", "接続済み")),
                     SpeakerPhase.Standby => ("KefDotSuccess", Loc.T("연결됨, 스피커는 대기 상태", "Connected, the speaker is in standby", "接続済み、スピーカーはスタンバイ中")),
+                    SpeakerPhase.Connecting when !slot.Unreachable && c.Driver != null => ("KefDotNeutral", Loc.T("연결하는 중", "Connecting", "接続中")),
+                    _ when c.Driver == null && !slot.Unreachable => ("KefDotNeutral", Loc.T("아직 연결하지 않았습니다", "Not connected yet", "まだ接続していません")),
                     _ => ("KefDotCritical", c.Status),
                 };
             dot.Style = Ui.Style(style);
@@ -373,57 +583,83 @@ sealed class SettingsView
                 if (d == null)
                 {
                     deviceCards.Children.Add(Ui.Secondary(Loc.T("연결하면 이름, 모델, 펌웨어가 표시됩니다.", "The name, model and firmware appear once connected.", "接続すると名前、モデル、ファームウェアが表示されます。")));
-                    return;
                 }
-                deviceCards.Children.Add(Ui.Card(Glyphs.Speaker, d.Name, d.Model, null));
-                if (!KefModels.Names.Contains(d.Model)) deviceCards.Children.Add(ModelCard());
-                deviceCards.Children.Add(finishSlot);
-                deviceCards.Children.Add(Ui.Card(Glyphs.Info, Loc.T("펌웨어", "Firmware", "ファームウェア"), d.Firmware, null));
+                else
+                {
+                    deviceCards.Children.Add(Ui.Card(Glyphs.Speaker, d.Name, d.Model, null));
+                    if (!KefModels.Names.Contains(d.Model)) deviceCards.Children.Add(ModelCard(slot));
+                    deviceCards.Children.Add(finishSlot);
+                    deviceCards.Children.Add(Ui.Card(Glyphs.Info, Loc.T("펌웨어", "Firmware", "ファームウェア"), d.Firmware, null));
+                }
             }
             // The finish list follows the picked model without rebuilding the model list above it.
-            if (d != null && (finishSlot.Children.Count == 0 || host.ShownModel != finishModel))
+            if (d != null && (finishSlot.Children.Count == 0 || slot.ShownModel != finishModel))
             {
-                finishModel = host.ShownModel;
+                finishModel = slot.ShownModel;
                 finishSlot.Children.Clear();
-                finishSlot.Children.Add(FinishCard(finishModel));
+                finishSlot.Children.Add(FinishCard(slot, finishModel));
             }
+            refreshVolume();
         }
         return (panel, Refresh);
+    }
+
+    Border RemoveCard(SpeakerSlot slot)
+    {
+        var remove = new Button { Content = Loc.T("삭제", "Remove", "削除") };
+        var confirm = Ui.AccentButton(Loc.T("삭제", "Remove", "削除"));
+        var flyout = new Flyout
+        {
+            Content = Ui.Column(12,
+                Ui.Text(Loc.T("이 스피커를 목록에서 지울까요? 주소, 암호, 상한 같은 이 스피커의 설정도 함께 지웁니다. 스피커 자체는 바뀌지 않습니다.", "Remove this speaker from the list? Its address, password, limit and other settings go with it. Nothing changes on the speaker itself.", "このスピーカーを一覧から削除しますか？ アドレス、パスワード、上限などこのスピーカーの設定も削除します。スピーカー自体は変わりません。"), 13),
+                confirm),
+        };
+        ((FrameworkElement)flyout.Content).MaxWidth = 300;
+        ((FrameworkElement)flyout.Content).Language = Loc.Tag;
+        remove.Flyout = flyout;
+        confirm.Click += (_, _) =>
+        {
+            flyout.Hide();
+            host.RemoveSpeaker(slot);
+            ShowSpeakerList();
+        };
+        return Ui.Card(Glyphs.Delete, Loc.T("이 스피커 삭제", "Remove this speaker", "このスピーカーを削除"),
+            Loc.T("이 PC의 목록에서만 지웁니다", "Removes it from the list on this PC only", "このPCの一覧からだけ削除します"), remove);
     }
 
     /// <summary>
     /// For a speaker that reports a model the app does not know: the model to draw it as and list finishes for.
     /// The inputs stay those of the reported model, so a wrong pick never hides an input the speaker has.
     /// </summary>
-    Border ModelCard()
+    Border ModelCard(SpeakerSlot slot)
     {
         var models = KefModels.Names;
         var box = new ComboBox { MinWidth = 200 };
         box.Items.Add(GlyphItem(Ui.AppGlyph(20), Loc.T("고르지 않음", "None", "選択しない")));
         foreach (var m in models) box.Items.Add(GlyphItem(Ui.AppGlyph(20, null, m), m));
-        box.SelectedIndex = host.PickedModel is string picked && models.Contains(picked) ? models.ToList().IndexOf(picked) + 1 : 0;
+        box.SelectedIndex = slot.Entry.PickedModel is string picked && models.Contains(picked) ? models.ToList().IndexOf(picked) + 1 : 0;
         box.SelectionChanged += (_, _) =>
         {
             if (updating) return;
-            host.PickedModel = box.SelectedIndex > 0 ? models[box.SelectedIndex - 1] : null;
+            slot.Entry.PickedModel = box.SelectedIndex > 0 ? models[box.SelectedIndex - 1] : null;
             host.SaveSettings();
         };
         return Ui.Card(Glyphs.Speaker, Loc.T("스피커 모델", "Speaker model", "スピーカーのモデル"), Loc.T("앱이 아직 모르는 모델입니다. 플라이아웃 그림과 색상 목록에 쓸 모델을 고르세요. 입력 목록은 바뀌지 않습니다.", "The app doesn't know this model yet. Pick the model to use for the flyout drawing and the finish list. The inputs stay as they are.", "アプリがまだ知らないモデルです。フライアウトの絵とカラーの一覧に使うモデルを選んでください。入力の一覧は変わりません。"), box);
     }
 
     /// <summary>The finish the flyout draws the speaker in. Speakers do not report it, so the user picks it.</summary>
-    Border FinishCard(string? model)
+    Border FinishCard(SpeakerSlot slot, string? model)
     {
         var finishes = KefFinishes.For(model);
         var box = new ComboBox { MinWidth = 200 };
         box.Items.Add(GlyphItem(Ui.AppGlyph(20, null, model), Loc.T("앱 기본 색상", "App default", "アプリの既定")));
         foreach (var f in finishes) box.Items.Add(GlyphItem(Ui.AppGlyph(20, f), f.Name));
-        var current = KefFinishes.Find(host.Settings.SpeakerFinish, model);
+        var current = KefFinishes.Find(slot.Entry.Finish, model);
         box.SelectedIndex = current == null ? 0 : finishes.ToList().IndexOf(current) + 1;
         box.SelectionChanged += (_, _) =>
         {
             if (updating) return;
-            host.Settings.SpeakerFinish = box.SelectedIndex > 0 ? finishes[box.SelectedIndex - 1].Id : null;
+            slot.Entry.Finish = box.SelectedIndex > 0 ? finishes[box.SelectedIndex - 1].Id : null;
             host.SaveSettings();
         };
         return Ui.Card(Glyphs.Color, Loc.T("스피커 색상", "Speaker finish", "スピーカーのカラー"), Loc.T("플라이아웃의 스피커 그림을 이 색으로 그립니다. 스피커가 색상을 알려 주지 않아 직접 고릅니다.", "The flyout draws the speaker in this finish. Speakers don't report their color, so pick it here.", "フライアウトのスピーカーの絵をこの色で描きます。スピーカーは色を知らせないため、ここで選びます。"), box);
@@ -432,9 +668,8 @@ sealed class SettingsView
     static StackPanel GlyphItem(UIElement glyph, string name) =>
         Ui.Row(10, glyph, new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center });
 
-    // ---------- Volume ----------
-
-    (UIElement, Action?) VolumePage()
+    /// <summary>The volume limit and correction of one speaker, so each room keeps its own.</summary>
+    (UIElement, Action) VolumeCards(SpeakerSlot slot)
     {
         var limitBox = new NumberBox
         {
@@ -442,7 +677,7 @@ sealed class SettingsView
             Maximum = 100,
             SmallChange = 1,
             LargeChange = 10,
-            Value = host.Settings.AppVolumeLimit,
+            Value = slot.Entry.AppVolumeLimit,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
             Width = 130,
         };
@@ -451,10 +686,10 @@ sealed class SettingsView
             if (updating) return;
             if (double.IsNaN(e.NewValue))
             {
-                limitBox.Value = host.Settings.AppVolumeLimit;
+                limitBox.Value = slot.Entry.AppVolumeLimit;
                 return;
             }
-            host.Settings.AppVolumeLimit = Math.Clamp((int)Math.Round(e.NewValue), 1, 100);
+            slot.Entry.AppVolumeLimit = Math.Clamp((int)Math.Round(e.NewValue), 1, 100);
             host.SaveSettings();
         };
         var deviceLimit = new TextBlock { Style = Ui.Style("KefSecondaryText"), FontSize = 14 };
@@ -464,7 +699,7 @@ sealed class SettingsView
         approach.Toggled += (_, _) =>
         {
             if (updating) return;
-            host.Settings.ApproachFromAbove = approach.IsOn;
+            slot.Entry.ApproachFromAbove = approach.IsOn;
             host.SaveSettings();
         };
         string approachName = Loc.T("정확한 음량 맞추기", "Accurate volume", "正確な音量合わせ");
@@ -477,21 +712,19 @@ sealed class SettingsView
         var approachTitle = Ui.Row(0, Ui.Text(approachName), help);
 
         var panel = Ui.Column(4,
-            Ui.PageTitle(Loc.T("음량", "Volume", "音量")),
-            Ui.Card(Glyphs.Limit, Loc.T("앱 음량 상한", "App volume limit", "アプリの音量上限"), Loc.T("이 앱에서 올릴 수 있는 최대 음량입니다. 내리는 것은 언제나 됩니다.", "The highest volume this app raises to. Lowering always works.", "このアプリで上げられる最大の音量です。下げる操作はいつでもできます。"), limitBox),
+            Ui.Card(Glyphs.Limit, Loc.T("앱 음량 상한", "App volume limit", "アプリの音量上限"), Loc.T("이 앱에서 이 스피커를 올릴 수 있는 최대 음량입니다. 내리는 것은 언제나 됩니다.", "The highest volume this app raises this speaker to. Lowering always works.", "このアプリでこのスピーカーを上げられる最大の音量です。下げる操作はいつでもできます。"), limitBox),
             Ui.Card(Glyphs.Speaker, Loc.T("KEF 기기 최대 음량", "KEF device maximum volume", "KEF機器の最大音量"), Loc.T("KEF Connect에서 정한 값입니다. 앱 상한과 둘 중 낮은 값을 씁니다.", "Set in KEF Connect. The lower of this and the app limit applies.", "KEF Connectで設定した値です。アプリの上限と比べて低いほうを使います。"), deviceLimit),
             Ui.Card(Glyphs.Volume, Loc.T("지금 적용되는 상한", "Limit in effect", "現在の上限"), Loc.T("플라이아웃 슬라이더에 눈금으로 표시됩니다.", "Shown as the tick on the flyout slider.", "フライアウトのスライダーに目盛りで表示されます。"), effective),
-            Ui.GroupHeader(Loc.T("음량 보정", "Volume correction", "音量補正")),
             Ui.Card(Glyphs.Volume, approachTitle, Loc.T("올릴 때 목표보다 살짝 높게 보낸 뒤 목표로 내립니다", "When raising, sends a slightly higher value first and then settles on the target", "上げるときは目標より少し高く送ってから目標に下げます"), approach, out _),
             tip);
 
         void Refresh()
         {
-            var c = host.Controller;
-            if (!limitBox.IsLoaded || limitBox.FocusState == FocusState.Unfocused) limitBox.Value = host.Settings.AppVolumeLimit;
+            var c = slot.Controller;
+            if (!limitBox.IsLoaded || limitBox.FocusState == FocusState.Unfocused) limitBox.Value = slot.Entry.AppVolumeLimit;
             deviceLimit.Text = c.Device == null ? Loc.T("연결 후 표시", "Shown once connected", "接続後に表示") : c.Device.DeviceVolumeLimit is int d ? d.ToString() : Loc.T("제한 없음", "No limit", "制限なし");
             effective.Text = $"{c.EffectiveLimit} ({SpeakerPresentation.LimitSource(c)})";
-            approach.IsOn = host.Settings.ApproachFromAbove;
+            approach.IsOn = slot.Entry.ApproachFromAbove;
         }
         return (panel, Refresh);
     }
@@ -536,6 +769,7 @@ sealed class SettingsView
             {
                 HotkeyAction.VolumeUp => Glyphs.Up,
                 HotkeyAction.VolumeDown => Glyphs.Down,
+                HotkeyAction.NextSpeaker => Glyphs.Speaker,
                 _ => Glyphs.Mute,
             };
             var card = Ui.Card(glyph, Ui.Text(HotkeyBinding.ActionName(binding.Action)), "", box.View, out var status);
@@ -595,6 +829,7 @@ sealed class SettingsView
                 {
                     HotkeyRegistration.Registered => (Loc.T("사용 중", "Active", "有効"), Ui.Style("KefSecondaryText")),
                     HotkeyRegistration.InUse => (Loc.T("다른 앱이 이미 쓰고 있어 등록하지 못했습니다. 다른 조합으로 바꿔 주세요.", "Another app already uses it, so it couldn't be registered. Choose another combination.", "ほかのアプリがすでに使っているため登録できませんでした。別の組み合わせに変更してください。"), Ui.Style("KefCriticalText")),
+                    _ when action == HotkeyAction.NextSpeaker => (Loc.T("꺼짐. 스피커가 2대 이상일 때 선택한 스피커를 차례로 바꿉니다", "Off. With two or more speakers, it moves to the next one in the list", "オフ。スピーカーが2台以上のとき、選択中のスピーカーを順に切り替えます"), Ui.Style("KefSecondaryText")),
                     _ => (Loc.T("꺼짐", "Off", "オフ"), Ui.Style("KefSecondaryText")),
                 };
             }

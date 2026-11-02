@@ -43,6 +43,29 @@ struct SpeakerControllerChangesTests {
         #expect(driver.writes.isEmpty)
     }
 
+    @Test func listeningFollowsTheSelectedSpeaker() async {
+        let driver = FakeDriver()
+        driver.extraCapabilities = [.changes]
+        // Registered but not selected: connects without listening.
+        let c = SpeakerController(sleep: { _ in })
+        c.listensForChanges = false
+        await c.connect(driver)
+        #expect(c.isOnline)
+        #expect(driver.changeCalls == 0)
+
+        c.listensForChanges = true
+        await eventually { driver.waitingForChanges }
+        #expect(driver.changeCalls == 1)
+        driver.report(.none)
+        await eventually { c.changesActive }
+        #expect(c.changesActive)
+
+        c.listensForChanges = false
+        #expect(!c.changesActive)
+        #expect(c.healthyPollDelay() == .seconds(4))
+        #expect(driver.writes.isEmpty)
+    }
+
     @Test func echoOfOwnWriteCostsNoRead() async {
         let driver = FakeDriver()
         let c = await listening(driver)

@@ -54,9 +54,11 @@ enum SelfTest {
         let suite = "io.github.kimdaehee0824.KEFRemote.SelfTest"
         UserDefaults.standard.removePersistentDomain(forName: suite)
         let model = AppModel(defaults: UserDefaults(suiteName: suite) ?? .standard, usesKeychain: false)
-        let controller = model.controller
-        let speaker = DemoSpeaker()
-        let driver = DemoDriver(speaker)
+        let room = DemoSpeaker.room()
+        let speaker = room[DemoSpeaker.deskAddress]!
+        model.makeDriver = { entry, _ in DemoDriver(room[entry.host] ?? DemoSpeaker()) }
+        // The selected speaker's, which changes once there are several.
+        var controller: SpeakerController { model.controller }
         // Commands are queued on the next main actor turn, so wait for one to start and finish.
         func settle() async throws {
             try await Task.sleep(for: .milliseconds(80))
@@ -70,8 +72,10 @@ enum SelfTest {
             try await panel.save(folder, "01-panel-setup.png")
         }
         await step("connect") {
-            model.connect(using: driver)
+            guard case .success = model.addSpeaker(host: DemoSpeaker.deskAddress, password: "") else { throw Failure(description: "added") }
+            try expect(model.speakers.count == 1 && model.selected != nil && !model.hasSeveral, "one speaker, selected")
             try await waitFor("online") { controller.isOnline && controller.snapshot != nil }
+            try expect(controller.listensForChanges, "the selected speaker listens for changes")
             try await panel.save(folder, "02-panel-on.png")
             try await darkPanel.save(folder, "02-panel-on-dark.png")
         }
@@ -207,12 +211,11 @@ enum SelfTest {
         await step("settings") {
             try await Capture(width: 500) { GeneralSettings().environment(model) }.save(folder, "08-settings-general.png")
             try await Capture(width: 500) { SpeakerSettings().environment(model) }.save(folder, "09-settings-speaker.png")
-            try await Capture(width: 500) { VolumeSettings().environment(model) }.save(folder, "10-settings-volume.png")
         }
         await step("unknown model") {
             speaker.model = "KEF NEWMODEL"
             speaker.firmware = "NEWMODEL_V0100"
-            model.connect(using: driver)
+            model.connect()
             try await waitFor("the unknown model") { controller.device?.model == "KEF NEWMODEL" && controller.isOnline }
             try expect(model.shownModel == "KEF NEWMODEL" && model.speakerFinish == nil, "the app icon's drawing and colors")
             try await Capture(width: 500) { SpeakerSettings().environment(model) }.save(folder, "13-settings-unknown-model.png")
@@ -226,6 +229,116 @@ enum SelfTest {
                 let slug = name.lowercased().replacingOccurrences(of: " ", with: "-")
                 try await panel.save(folder, "\(14 + index)-panel-\(slug).png")
             }
+        }
+        await step("back to the LSX II LT") {
+            speaker.model = "LSX II LT"
+            speaker.firmware = "LSXIILT_V2186"
+            model.pickedModel = nil
+            model.speakerFinishID = "lsx-ii-lt/sage-green"
+            model.connect()
+            try await waitFor("the LSX II LT") { controller.device?.model == "LSX II LT" && controller.isOnline && controller.snapshot != nil }
+            let desk = model.speakers[0]
+            try expect(desk.entry.name == controller.device?.name && desk.entry.model == "LSX II LT", "name and model kept for the list")
+        }
+
+        // Several speakers: the desk, the living room (on), the bedroom (standby) and the study (offline).
+        await step("add speakers") {
+            for address in [DemoSpeaker.livingAddress, DemoSpeaker.bedroomAddress, DemoSpeaker.studyAddress] {
+                guard case .success = model.addSpeaker(host: address, password: "") else { throw Failure(description: "added \(address)") }
+            }
+            if case .success = model.addSpeaker(host: " \(DemoSpeaker.livingAddress) ", password: "") {
+                throw Failure(description: "expected the same address twice to be refused")
+            }
+            try expect(model.speakers.count == 4 && model.hasSeveral, "four speakers")
+            try expect(model.selected?.entry.host == DemoSpeaker.deskAddress, "the desk stays selected")
+            let living = model.speakers[1], bedroom = model.speakers[2], study = model.speakers[3]
+            try expect(!living.controller.listensForChanges && !bedroom.controller.listensForChanges, "only the selected speaker listens")
+            model.update(living) { $0.finish = "ls60-wireless/royal-blue" }
+            model.update(bedroom) { $0.finish = "ls50-wireless-ii/mineral-white" }
+            try await waitFor("the other rooms read", timeout: .seconds(15)) {
+                living.isOn && bedroom.controller.snapshot?.power == .standby && study.unreachable
+            }
+            try expect(living.listStatus == loc("음량 18", "Volume 18", "音量 18"), "living room at 18, got \(living.listStatus)")
+            try expect(study.listStatus == SpeakerSlot.notConnected, "study not connected, got \(study.listStatus)")
+            try expect(living.entry.name == room[DemoSpeaker.livingAddress]!.name, "the living room's name kept")
+        }
+        await step("panel with several speakers") {
+            try await panel.save(folder, "40-panel-several.png")
+            try await darkPanel.save(folder, "40-panel-several-dark.png")
+        }
+        await step("speaker list") {
+            model.speakerListOpen = true
+            await model.refreshOthers()
+            try await Capture(width: 260) { SpeakerListPopover {}.environment(model) }.save(folder, "41-speaker-list.png")
+            try await Capture(width: 260, appearance: .darkAqua) { SpeakerListPopover {}.environment(model) }.save(folder, "41-speaker-list-dark.png")
+            model.speakerListOpen = false
+        }
+        await step("power from the list") {
+            let bedroom = model.speakers[2]
+            await model.setPower(bedroom, on: true)
+            try await waitFor("the bedroom on") { room[DemoSpeaker.bedroomAddress]!.on && !bedroom.controller.isBusy }
+            try expect(model.selected?.entry.host == DemoSpeaker.deskAddress, "the selection stays")
+            await model.setPower(bedroom, on: false)
+            try await waitFor("the bedroom off") { !room[DemoSpeaker.bedroomAddress]!.on && !bedroom.controller.isBusy }
+        }
+        await step("select another speaker") {
+            let desk = model.speakers[0], living = model.speakers[1]
+            model.select(living)
+            try expect(model.selected === living && controller === living.controller, "the living room selected")
+            try expect(living.controller.listensForChanges && !desk.controller.listensForChanges, "listening moves with the selection")
+            try await waitFor("the living room read") { controller.isOnline && controller.snapshot?.volume == 18 }
+            try await panel.save(folder, "43-panel-living-room.png")
+            try await darkPanel.save(folder, "43-panel-living-room-dark.png")
+            let state = HUDState()
+            try await Capture(width: HUDView.size.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "44-volume-hud-speaker-dark.png")
+        }
+        await step("limit per speaker") {
+            model.appLimit = 20
+            controller.setVolume(60)
+            try await settle()
+            try expect(room[DemoSpeaker.livingAddress]!.volume == 20, "living room capped at its own 20, got \(room[DemoSpeaker.livingAddress]!.volume)")
+            try expect(model.speakers[0].entry.appLimit == VolumePolicy.defaultAppLimit, "the desk keeps its limit")
+        }
+        await step("next speaker shortcut") {
+            try expect(model.shortcuts[.nextSpeaker] == nil, "off by default")
+            let keys = VolumeKeys(model: model)
+            keys.press(.nextSpeaker)
+            try expect(model.selected?.entry.host == DemoSpeaker.bedroomAddress, "to the bedroom")
+            try await waitFor("the bedroom read") { controller.isOnline && controller.snapshot != nil }
+            let state = HUDState()
+            state.content = .speaker
+            try await Capture(width: HUDView.size.width, appearance: .darkAqua) { HUDView(model: model, state: state) }.save(folder, "45-volume-hud-next-standby-dark.png")
+            keys.press(.nextSpeaker)
+            try expect(model.selected?.entry.host == DemoSpeaker.studyAddress, "to the study")
+            keys.press(.nextSpeaker)
+            try expect(model.selected?.entry.host == DemoSpeaker.deskAddress, "around to the desk")
+            try await Capture(width: 500) { ShortcutSettings().environment(model) }.save(folder, "46-settings-shortcuts.png")
+        }
+        await step("settings with several speakers") {
+            try await Capture(width: 500) { SpeakerSettings().environment(model) }.save(folder, "47-settings-speakers.png")
+            try await Capture(width: 500, appearance: .darkAqua) { SpeakerSettings().environment(model) }.save(folder, "47-settings-speakers-dark.png")
+            let living = model.speakers[1]
+            try await Capture(width: 500, appearance: .darkAqua) { SpeakerSheet(slot: living) {}.environment(model) }.save(folder, "48-settings-speaker-page-dark.png")
+        }
+        await step("turn all off") {
+            await model.turnAllOff()
+            try await waitFor("all off") {
+                !room[DemoSpeaker.deskAddress]!.on && !room[DemoSpeaker.livingAddress]!.on && model.speakers.allSatisfy { !$0.controller.isBusy }
+            }
+            try expect(model.selected?.entry.host == DemoSpeaker.deskAddress, "the selection stays")
+        }
+        await step("remove speakers") {
+            let living = model.speakers[1]
+            model.select(living)
+            model.remove(model.speakers[3])
+            model.remove(living)
+            try expect(model.selected?.entry.host == DemoSpeaker.deskAddress, "the one before takes over")
+            try expect(controller.listensForChanges, "and listens")
+            model.remove(model.speakers[1])
+            try expect(model.speakers.count == 1 && !model.hasSeveral, "one speaker again")
+            controller.wake(to: "usb")
+            try await settle()
+            try await panel.save(folder, "49-panel-one-again.png")
         }
         await step("menu bar icons") {
             try saveMenuBarStrip(folder.appending(path: "11-menu-bar.png"))
@@ -323,10 +436,34 @@ private final class Capture {
     }
 }
 
-/// In-memory LSX II LT. Power, inputs and volume behave like the real one, instantly.
-/// The model it reports can be changed to one the app does not know.
+/// In-memory speaker, an LSX II LT unless told otherwise. Power, inputs and volume behave like the real one,
+/// instantly. The model it reports can be changed to one the app does not know.
 @MainActor
 final class DemoSpeaker {
+    static let deskAddress = "192.168.0.20", livingAddress = "192.168.0.21", bedroomAddress = "192.168.0.22", studyAddress = "192.168.0.23"
+
+    /// The rooms of the self-test and `--demo --speakers`, by address, as on Windows.
+    static func room() -> [String: DemoSpeaker] {
+        let living = DemoSpeaker(), bedroom = DemoSpeaker(), study = DemoSpeaker()
+        living.name = loc("거실 스피커", "Living room", "リビングのスピーカー")
+        living.model = "LS60 Wireless"
+        living.firmware = "LS60_V2130"
+        living.source = "wifi"
+        living.volume = 18
+        bedroom.name = loc("침실 스피커", "Bedroom", "寝室のスピーカー")
+        bedroom.model = "LS50 Wireless II"
+        bedroom.firmware = "LS50W2_V2130"
+        bedroom.on = false
+        bedroom.source = "tv"
+        bedroom.volume = 15
+        study.name = loc("서재 스피커", "Study", "書斎のスピーカー")
+        study.model = "LSX II"
+        study.firmware = "LSXII_V2130"
+        study.offline = true
+        return [deskAddress: DemoSpeaker(), livingAddress: living, bedroomAddress: bedroom, studyAddress: study]
+    }
+
+    var name = loc("책상 스피커", "Desk speakers", "デスクのスピーカー")
     var model = "LSX II LT"
     var firmware = "LSXIILT_V2186"
     var on = true
@@ -364,7 +501,7 @@ final class DemoDriver: SpeakerDriver {
 
     func connect() async throws -> DeviceInfo {
         try online()
-        let known = speaker.model == "LSX II LT"
+        let known = KefModels.names.contains(speaker.model)
         var sources = [
             SourceOption(id: "usb", name: "USB-C / PC"), SourceOption(id: "wifi", name: "Wi-Fi"),
             SourceOption(id: "bluetooth", name: "Bluetooth"), SourceOption(id: "tv", name: "TV (HDMI eARC)"),
@@ -374,10 +511,10 @@ final class DemoDriver: SpeakerDriver {
             sources += [SourceOption(id: "coaxial", name: "Coaxial"), SourceOption(id: "analog", name: "Analog")]
         }
         return DeviceInfo(
-            name: loc("책상 스피커", "Desk speakers", "デスクのスピーカー"), model: speaker.model, firmware: speaker.firmware,
+            name: speaker.name, model: speaker.model, firmware: speaker.firmware,
             capabilities: [.volume, .mute, .source, .power, .playback],
             sources: sources,
-            deviceVolumeLimit: nil, verifiedModel: known
+            deviceVolumeLimit: nil, verifiedModel: speaker.model == "LSX II LT"
         )
     }
 

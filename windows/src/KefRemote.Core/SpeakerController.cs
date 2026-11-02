@@ -171,8 +171,31 @@ public sealed class SpeakerController : IDisposable
         }
     }
 
-    /// <summary>Start listening for change reports after connecting, when the driver offers them. Off in tests.</summary>
-    public bool ListenForChanges { get; set; } = true;
+    /// <summary>
+    /// Listen for change reports while connected, when the driver offers them. Off in tests, and for a speaker that
+    /// is registered but not the one in use: it is only read when its row is shown. Turning it on while connected
+    /// starts listening at once; turning it off stops.
+    /// </summary>
+    public bool ListenForChanges
+    {
+        get => listenForChanges;
+        set
+        {
+            if (listenForChanges == value) return;
+            listenForChanges = value;
+            if (!value)
+            {
+                if (listenCts == null) return;
+                StopListening();
+                Notify();
+            }
+            else if (Driver is { } driver && Device != null)
+            {
+                StartListening(driver);
+            }
+        }
+    }
+    bool listenForChanges = true;
 
     /// <summary>Change reports are arriving, so polling is only a heartbeat.</summary>
     public bool ChangesActive { get; private set; }

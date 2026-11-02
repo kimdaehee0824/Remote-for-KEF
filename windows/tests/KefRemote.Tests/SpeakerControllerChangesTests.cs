@@ -46,6 +46,27 @@ public class SpeakerControllerChangesTests
     }
 
     [Fact]
+    public async Task ListeningFollowsTheSelectedSpeaker()
+    {
+        var f = new FakeDriver();
+        f.Capabilities |= DriverCapabilities.Changes;
+        // Registered but not selected: connects without listening.
+        var c = new SpeakerController { Clock = () => now, Delay = (_, _) => Task.CompletedTask, ListenForChanges = false };
+        Assert.True(await c.ConnectAsync(f));
+        Assert.Equal(0, f.ChangeCalls);
+
+        c.ListenForChanges = true;
+        Assert.Equal(1, f.ChangeCalls);
+        f.Report(DeviceChanges.None);
+        Assert.True(c.ChangesActive);
+
+        c.ListenForChanges = false;
+        Assert.False(c.ChangesActive);
+        Assert.Equal(1500, c.NextPollDelay(true).TotalMilliseconds);
+        Assert.Equal(0, f.Writes);
+    }
+
+    [Fact]
     public async Task EchoOfOwnWriteCostsNoRead()
     {
         var f = new FakeDriver();

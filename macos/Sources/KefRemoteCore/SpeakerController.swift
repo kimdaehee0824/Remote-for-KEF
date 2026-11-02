@@ -68,8 +68,19 @@ public final class SpeakerController {
             if playbackEnabled { Task { await refreshPlayback() } } else { setPlayback(.none) }
         }
     }
-    /// Listen for change reports when the driver offers them. Off in tests.
-    public var listensForChanges = true
+    /// Listen for change reports when the driver offers them. Off in tests, and for a speaker that is registered
+    /// but not the one in use: it is only read when the speaker list shows it. Turning it on while online starts
+    /// listening at once; turning it off stops.
+    public var listensForChanges = true {
+        didSet {
+            guard listensForChanges != oldValue else { return }
+            if listensForChanges {
+                if phase == .online { startListening() }
+            } else {
+                stopListening()
+            }
+        }
+    }
     /// Seconds since boot, for counting the play position on. Replaceable for tests.
     @ObservationIgnored public var uptime: () -> Double = { monotonicSeconds() }
 

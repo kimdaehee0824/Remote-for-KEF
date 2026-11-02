@@ -6,12 +6,23 @@ namespace KefRemote.Desktop;
 public sealed class AppSettings
 {
     public string DriverId { get; set; } = "kef-w2";
+
+    /// <summary>
+    /// The registered speakers. Null in settings written before 0.5, which had one speaker in <see cref="Host"/> and
+    /// the fields after it; <see cref="SpeakerList.Migrate"/> turns that into the first entry.
+    /// </summary>
+    public List<SpeakerEntry>? Speakers { get; set; }
+
+    /// <summary>Id of the speaker the flyout, tray and shortcuts work on.</summary>
+    public string? SelectedSpeaker { get; set; }
+
+    /// <summary>The one speaker of 0.4 and earlier. Kept as it was so an older version still finds it.</summary>
     public string Host { get; set; } = "";
 
-    /// <summary>Device password encrypted for the current OS user by the front end. Never stored in plain text.</summary>
+    /// <summary>0.4 and earlier, see <see cref="SpeakerEntry.ProtectedPassword"/>.</summary>
     public string? ProtectedPassword { get; set; }
 
-    /// <summary>Upper bound for raises from this app, 1–100. Lowering is always allowed.</summary>
+    /// <summary>0.4 and earlier, see <see cref="SpeakerEntry.AppVolumeLimit"/>.</summary>
     public int AppVolumeLimit { get; set; } = 30;
     public bool StartWithWindows { get; set; }
 
@@ -22,22 +33,16 @@ public sealed class AppSettings
     /// <summary>Show what the speaker is playing in a card above the flyout, with play/pause and skip.</summary>
     public bool ShowNowPlaying { get; set; } = true;
 
-    /// <summary>Raise the volume through a short overshoot so it sounds the same as when lowered to it.</summary>
+    /// <summary>0.4 and earlier, see <see cref="SpeakerEntry.ApproachFromAbove"/>.</summary>
     public bool ApproachFromAbove { get; set; }
 
-    /// <summary>Finish the speaker icon is drawn in (KefFinish.Id), or null for the app's own colours.</summary>
+    /// <summary>0.4 and earlier, see <see cref="SpeakerEntry.Finish"/>.</summary>
     public string? SpeakerFinish { get; set; }
 
-    /// <summary>
-    /// Model picked per speaker address, for a speaker that reports a model the app does not know.
-    /// Only the drawing and the finish list use it.
-    /// </summary>
+    /// <summary>0.4 and earlier: the picked model per speaker address, see <see cref="SpeakerEntry.PickedModel"/>.</summary>
     public Dictionary<string, string> SpeakerModels { get; set; } = [];
 
-    /// <summary>
-    /// Last input seen per speaker address. A speaker woken with the power switch doesn't say which input it came
-    /// back on, so the flyout shows this one, also after the app restarts.
-    /// </summary>
+    /// <summary>0.4 and earlier: the last input per speaker address, see <see cref="SpeakerEntry.LastInput"/>.</summary>
     public Dictionary<string, string> LastInputs { get; set; } = [];
 
     /// <summary>The one-time notice that closing the settings window keeps the app in the tray was shown.</summary>
@@ -56,7 +61,7 @@ public sealed class AppSettings
     public List<HotkeyBinding> Hotkeys { get; set; } = [];
 
     [JsonIgnore]
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(Host);
+    public bool IsConfigured => SpeakerList.All(this).Any(e => e.IsConfigured);
 }
 
 /// <summary>Settings as JSON in one file. Missing or broken files fall back to defaults.</summary>

@@ -9,6 +9,9 @@ public enum HotkeyAction
     VolumeUp,
     VolumeDown,
     ToggleMute,
+
+    /// <summary>Makes the next registered speaker the one the shortcuts and the tray work on. Off by default.</summary>
+    NextSpeaker,
 }
 
 // Values match the RegisterHotKey MOD_* flags so they can be passed through unchanged.
@@ -56,6 +59,7 @@ public sealed class HotkeyBinding
         new(HotkeyAction.VolumeUp, HotkeyModifiers.Control | HotkeyModifiers.Alt, VirtualKeys.Up),
         new(HotkeyAction.VolumeDown, HotkeyModifiers.Control | HotkeyModifiers.Alt, VirtualKeys.Down),
         new(HotkeyAction.ToggleMute, HotkeyModifiers.Control | HotkeyModifiers.Alt, VirtualKeys.M),
+        new(HotkeyAction.NextSpeaker, HotkeyModifiers.None, 0),
     ];
 
     /// <summary>
@@ -107,6 +111,7 @@ public sealed class HotkeyBinding
         HotkeyAction.VolumeUp => Loc.T("음량 올리기", "Volume up", "音量を上げる"),
         HotkeyAction.VolumeDown => Loc.T("음량 내리기", "Volume down", "音量を下げる"),
         HotkeyAction.ToggleMute => Loc.T("음소거 / 해제", "Mute / unmute", "ミュート / 解除"),
+        HotkeyAction.NextSpeaker => Loc.T("다음 스피커로 바꾸기", "Switch to the next speaker", "次のスピーカーに切り替える"),
         _ => action.ToString(),
     };
 

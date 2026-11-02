@@ -1,3 +1,4 @@
+using KefRemote.App.Native;
 using KefRemote.App.Views;
 using KefRemote.Core;
 using KefRemote.Desktop;
@@ -21,7 +22,8 @@ static class SelfTest
         Directory.CreateDirectory(folder);
         var report = new List<string>();
         int failures = 0;
-        var speaker = new DemoSpeaker();
+        var room = DemoSpeaker.Room();
+        var speaker = room[DemoSpeaker.DeskAddress];
         string settingsFolder = Path.Combine(folder, "settings");
         if (Directory.Exists(settingsFolder)) Directory.Delete(settingsFolder, recursive: true);
 
@@ -62,7 +64,7 @@ static class SelfTest
         await Step("start", () =>
         {
             host = new AppHost(new LaunchOptions(Background: true, SelfTestFolder: folder),
-                new HostEnvironment(settingsFolder, _ => new DemoDriver(speaker), SelfTest: true));
+                new HostEnvironment(settingsFolder, o => DemoSpeaker.Driver(room, o), SelfTest: true));
             return Task.CompletedTask;
         });
         if (host == null)
@@ -71,6 +73,8 @@ static class SelfTest
             return;
         }
         var c = host.Controller;
+        // The first speaker's controller, kept while other speakers are added and selected.
+        SpeakerController First() => host.Speakers[0].Controller;
 
         await Step("flyout, not set up", async () =>
         {
@@ -79,7 +83,9 @@ static class SelfTest
         });
         await Step("connect", async () =>
         {
-            await host.ApplyConnectionAsync("192.168.0.20", "");
+            await host.ApplyConnectionAsync(DemoSpeaker.DeskAddress, "");
+            c = host.Controller;
+            Expect(host.Speakers.Count == 1 && !host.HasSeveral, "one speaker");
             Expect(c.Phase == SpeakerPhase.On, "on after connect, got " + c.Phase);
             host.ShowFlyout();
             await Capture(host.Flyout.Root, "02-flyout-on.png");
@@ -109,13 +115,13 @@ static class SelfTest
         });
         await Step("approach from above", async () =>
         {
-            host.Settings.ApproachFromAbove = true;
+            host.Speakers[0].Entry.ApproachFromAbove = true;
             host.SaveSettings();
             await c.SetVolumeTargetAsync(10);
             speaker.Writes.Clear();
             await c.SetVolumeTargetAsync(20);
             Expect(speaker.Writes.SequenceEqual([22, 20]), "writes 22 then 20, got " + string.Join(",", speaker.Writes));
-            host.Settings.ApproachFromAbove = false;
+            host.Speakers[0].Entry.ApproachFromAbove = false;
             host.SaveSettings();
         });
         await Step("input switch in progress", async () =>
@@ -191,7 +197,7 @@ static class SelfTest
         });
         await Step("speaker finish", async () =>
         {
-            host.Settings.SpeakerFinish = "lsx-ii-lt/sage-green";
+            host.Speakers[0].Entry.Finish = "lsx-ii-lt/sage-green";
             host.SaveSettings();
             host.ShowFlyout();
             await Capture(host.Flyout.Root, "15-flyout-finish.png");
@@ -200,7 +206,6 @@ static class SelfTest
                  {
                      (SettingsPage.General, "10-settings-general.png"),
                      (SettingsPage.Speaker, "11-settings-speaker.png"),
-                     (SettingsPage.Volume, "12-settings-volume.png"),
                      (SettingsPage.Hotkeys, "13-settings-hotkeys.png"),
                      (SettingsPage.About, "14-settings-about.png"),
                  })
@@ -228,7 +233,7 @@ static class SelfTest
             await Step("picked model " + model, async () =>
             {
                 host.PickedModel = model;
-                host.Settings.SpeakerFinish = KefFinishes.For(model)[0].Id;
+                host.Speakers[0].Entry.Finish = KefFinishes.For(model)[0].Id;
                 host.SaveSettings();
                 Expect(host.ShownModel == model && host.Finish?.Model == model, "drawn as " + model);
                 Expect(c.Driver?.Sources.Count == 7, "every input, as for any model the app does not know");
@@ -238,8 +243,126 @@ static class SelfTest
         }
         await Step("hotkeys registered", () =>
         {
-            Expect(host.Hotkeys.Status.Count == 3, "three hotkey entries");
+            Expect(host.Hotkeys.Status.Count == 4, "four hotkey entries");
+            Expect(host.Hotkeys.Status.GetValueOrDefault(HotkeyAction.NextSpeaker) == HotkeyRegistration.Off, "next speaker off by default");
             return Task.CompletedTask;
+        });
+
+        // ---------- several speakers ----------
+
+        SpeakerSlot? desk = null, living = null, bedroom = null, study = null;
+        await Step("back to the LSX II LT", async () =>
+        {
+            speaker.ModelName = "SP4077";
+            speaker.Release = "LSXIILT_V2186";
+            host.PickedModel = null;
+            host.Speakers[0].Entry.Finish = "lsx-ii-lt/sage-green";
+            host.SaveSettings();
+            await host.ReconnectAsync();
+            desk = host.Speakers[0];
+            Expect(desk.Controller.Device?.Model == "LSX II LT", "LSX II LT again");
+            Expect(desk.Entry.Name == desk.Controller.Device?.Name && desk.Entry.Model == "LSX II LT", "name and model kept for the list");
+        });
+        await Step("add speakers", async () =>
+        {
+            living = await host.AddSpeakerAsync(DemoSpeaker.LivingAddress, "");
+            bedroom = await host.AddSpeakerAsync(DemoSpeaker.BedroomAddress, "");
+            study = await host.AddSpeakerAsync(DemoSpeaker.StudyAddress, "");
+            living.Entry.Finish = "ls60-wireless/royal-blue";
+            bedroom.Entry.Finish = "ls50-wireless-ii/mineral-white";
+            host.SaveSettings();
+            Expect(host.Speakers.Count == 4 && host.HasSeveral, "four speakers");
+            Expect(host.Selected == desk, "the first speaker stays selected");
+            Expect(host.Controller == desk!.Controller, "the flyout works on the selected speaker");
+            Expect(living.Controller.Phase == SpeakerPhase.On && bedroom.Controller.Phase == SpeakerPhase.Standby, "living on, bedroom in standby");
+            Expect(study.Unreachable, "study unreachable");
+            Expect(desk.Controller.ListenForChanges && !living.Controller.ListenForChanges, "only the selected speaker listens");
+            Expect(!living.Controller.PlaybackEnabled, "only the selected speaker reads what is playing");
+            Expect(host.Settings.Speakers?.Count == 4, "saved");
+        });
+        await Step("flyout with several speakers", async () =>
+        {
+            host.ShowFlyout();
+            await Capture(host.Flyout.Root, "40-flyout-several.png");
+        });
+        await Step("speaker list", async () =>
+        {
+            host.Flyout.OpenSpeakerList();
+            await WaitFor(() => host.Flyout.SpeakerListOpen, "the list to open");
+            await host.RefreshListAsync();
+            Expect(SpeakerPresentation.ListStatus(living!.Controller, living.Unreachable) == Loc.T("음량 18", "Volume 18", "音量 18"), "living room at 18");
+            Expect(SpeakerPresentation.ListStatus(study!.Controller, study.Unreachable) == SpeakerPresentation.NotReachable, "study not connected");
+            await Capture(host.Flyout.SpeakerListRoot, "41-speaker-list.png");
+            await Capture(host.Flyout.Root, "42-flyout-list-open.png");
+        });
+        await Step("power from the list", async () =>
+        {
+            var livingRoom = room[DemoSpeaker.LivingAddress];
+            await host.SetPowerAsync(living!, false);
+            Expect(!livingRoom.On && host.Selected == desk, "living room off, desk still selected");
+            await host.SetPowerAsync(living!, true);
+            Expect(livingRoom.On, "living room back on");
+            host.Flyout.CloseSpeakerList();
+            await WaitFor(() => !host.Flyout.SpeakerListOpen, "the list to close");
+        });
+        await Step("select another speaker", async () =>
+        {
+            int deskVolume = speaker.Volume;
+            await host.SelectAsync(living!);
+            Expect(host.Selected == living && host.Controller == living!.Controller, "living room selected");
+            Expect(host.Settings.SelectedSpeaker == living!.Id, "selection saved");
+            Expect(living.Controller.ListenForChanges && !desk!.Controller.ListenForChanges, "listening moved with the selection");
+            host.ShowFlyout();
+            await Capture(host.Flyout.Root, "43-flyout-living-room.png");
+            host.VolumeKeys.Handle(HotkeyAction.VolumeUp);
+            await WaitFor(() => room[DemoSpeaker.LivingAddress].Volume == 19, "the key to raise the living room");
+            Expect(speaker.Volume == deskVolume, "the desk untouched");
+            await Task.Delay(300);
+            await Capture(host.Osd.Root, "44-osd-speaker-name.png");
+        });
+        await Step("limit per speaker", async () =>
+        {
+            living!.Entry.AppVolumeLimit = 20;
+            host.SaveSettings();
+            await WaitFor(() => !living.Controller.Busy, "idle");
+            await living.Controller.SetVolumeTargetAsync(60);
+            Expect(room[DemoSpeaker.LivingAddress].Volume == 20, "living room capped at its own 20");
+            Expect(desk!.Controller.EffectiveLimit == 30, "desk keeps 30");
+        });
+        await Step("next speaker shortcut", async () =>
+        {
+            host.SelectNext();
+            await WaitFor(() => host.Selected == bedroom, "the bedroom to be next");
+            host.SelectNext();
+            await WaitFor(() => host.Selected == study, "the study to be next");
+            host.SelectNext();
+            await WaitFor(() => host.Selected == desk, "back to the desk");
+        });
+        await Step("settings, speaker list", async () =>
+        {
+            var settings = host.OpenSettings(SettingsPage.Speaker);
+            await Capture(settings.Root, "45-settings-speakers.png");
+            settings = host.OpenSettings(SettingsPage.Speaker, living);
+            await Capture(settings.Root, "46-settings-speaker-page.png");
+        });
+        await Step("turn all off", async () =>
+        {
+            await host.TurnAllOffAsync();
+            Expect(room.Values.Where(r => !r.Offline).All(r => !r.On), "every reachable speaker in standby");
+            await host.RunWhenIdle(() => First().PowerOnAsync("usb"));
+            Expect(speaker.On, "desk on again");
+        });
+        await Step("remove speakers", async () =>
+        {
+            host.RemoveSpeaker(study!);
+            Expect(host.Speakers.Count == 3 && host.Settings.Speakers?.Count == 3, "three left");
+            await host.SelectAsync(bedroom!);
+            host.RemoveSpeaker(bedroom!);
+            Expect(host.Selected == living, "the one before the removed selected speaker takes over");
+            host.RemoveSpeaker(living!);
+            Expect(host.Selected == desk && !host.HasSeveral, "back to one speaker");
+            host.ShowFlyout();
+            await Capture(host.Flyout.Root, "47-flyout-one-again.png");
         });
 
         Finish(folder, report, failures);
@@ -281,11 +404,29 @@ static class SelfTest
 }
 
 /// <summary>
-/// In-memory LSX II LT for the self-test. Power, inputs and volume behave like the real one, instantly.
+/// In-memory KEF speaker for the self-test and --demo. Power, inputs and volume behave like the real one, instantly.
 /// The model it reports can be changed to one the app does not know.
 /// </summary>
 sealed class DemoSpeaker
 {
+    public const string DeskAddress = "192.168.0.20", LivingAddress = "192.168.0.21", BedroomAddress = "192.168.0.22", StudyAddress = "192.168.0.23";
+
+    /// <summary>
+    /// Four rooms: the LSX II LT on the desk (the speaker the app was tried on), an LS60 that is on, an LS50 Wireless II
+    /// in standby and an LSX II that is unplugged.
+    /// </summary>
+    public static Dictionary<string, DemoSpeaker> Room() => new()
+    {
+        [DeskAddress] = new(),
+        [LivingAddress] = new() { Name = Loc.T("거실 스피커", "Living room", "リビングのスピーカー"), ModelName = "SP4017", Release = "LS60_V2130", Source = "wifi", Volume = 18 },
+        [BedroomAddress] = new() { Name = Loc.T("침실 스피커", "Bedroom", "寝室のスピーカー"), ModelName = "SP4025", Release = "LS50W2_V2130", On = false, Source = "tv", Volume = 15 },
+        [StudyAddress] = new() { Name = Loc.T("서재 스피커", "Study", "書斎のスピーカー"), ModelName = "SP4041", Release = "LSXII_V2130", Offline = true },
+    };
+
+    public static ISpeakerDriver Driver(Dictionary<string, DemoSpeaker> room, DriverOptions options) =>
+        new DemoDriver(room.TryGetValue(options.Host, out var speaker) ? speaker : new DemoSpeaker { Offline = true });
+
+    public string Name = Loc.T("책상 스피커", "Desk speakers", "デスクのスピーカー");
     public bool On = true;
     public string Source = "usb";
     public int Volume = 25;
@@ -326,7 +467,7 @@ sealed class DemoDriver(DemoSpeaker speaker) : ISpeakerDriver
     public Task<DeviceInfo> ConnectAsync(CancellationToken cancellationToken = default)
     {
         Online();
-        return Task.FromResult(new DeviceInfo(Loc.T("책상 스피커", "Desk speakers", "デスクのスピーカー"), Model.DisplayName, speaker.Release));
+        return Task.FromResult(new DeviceInfo(speaker.Name, Model.DisplayName, speaker.Release));
     }
 
     public Task<SpeakerState> ReadAsync(CancellationToken cancellationToken = default)

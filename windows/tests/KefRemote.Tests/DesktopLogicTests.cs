@@ -120,4 +120,20 @@ public class DesktopLogicTests
         Assert.Empty(osd.Shown);
         Assert.Single(scheduled);
     }
+
+    [Fact]
+    public async Task Switching_speakers_drops_presses_not_sent()
+    {
+        var osd = new RecordingOsd();
+        var state = new VolumeSnapshot(Ready: true, Volume: 20, Muted: false, Limit: 30);
+        var scheduled = new List<Action>();
+        var sent = new List<int>();
+        using var coordinator = new HotkeyVolumeCoordinator(() => state, t => { sent.Add(t); return Task.CompletedTask; }, _ => Task.CompletedTask,
+            () => false, osd, (_, a) => scheduled.Add(a));
+        coordinator.Handle(HotkeyAction.VolumeUp);
+        coordinator.SpeakerChanged();
+        foreach (var run in scheduled.ToList()) run();
+        await Task.Yield();
+        Assert.Empty(sent);
+    }
 }
