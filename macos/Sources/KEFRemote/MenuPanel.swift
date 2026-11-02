@@ -184,7 +184,8 @@ private struct PanelHeader: View {
             guard let device = c.device else { return "" }
             if c.isWaking { return loc("켜는 중", "Turning on", "電源を入れています") }
             if c.snapshot?.power == .standby { return loc("대기", "Standby", "スタンバイ") }
-            return device.verifiedModel ? device.model : loc("\(device.model) (미검증 모델)", "\(device.model) (unverified model)", "\(device.model)（未検証のモデル）")
+            // Whether the model was tested on a real speaker is in settings only (Device Info).
+            return device.model
         }
     }
 
