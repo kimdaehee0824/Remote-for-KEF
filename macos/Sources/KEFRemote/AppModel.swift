@@ -99,8 +99,21 @@ final class AppModel {
     /// More than one speaker: the surfaces say which one they work on and offer to switch.
     var hasSeveral: Bool { speakers.count > 1 }
     /// The speaker list beside the panel is open. The other speakers are read every `listRefresh` meanwhile.
-    var speakerListOpen = false
+    var speakerListOpen = false {
+        didSet { if oldValue, !speakerListOpen { listClosedAt = .now } }
+    }
     static let listRefresh: Duration = .seconds(3)
+    @ObservationIgnored private var listClosedAt: ContinuousClock.Instant?
+
+    /// The name in the panel header. A click on it while the list is open first closes the list as a click
+    /// outside the popover, so a click that comes right after that doesn't open it again.
+    func toggleSpeakerList() {
+        if speakerListOpen {
+            speakerListOpen = false
+        } else if listClosedAt.map({ $0.duration(to: .now) > .milliseconds(300) }) ?? true {
+            speakerListOpen = true
+        }
+    }
 
     var showsVolumeInMenuBar: Bool {
         didSet { defaults.set(showsVolumeInMenuBar, forKey: Keys.showVolume) }

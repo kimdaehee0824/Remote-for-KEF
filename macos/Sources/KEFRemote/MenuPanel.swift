@@ -224,7 +224,7 @@ private struct SpeakerName: View {
         let name = model.selected?.name ?? "Remote for KEF"
         if model.hasSeveral {
             Button {
-                model.speakerListOpen.toggle()
+                model.toggleSpeakerList()
             } label: {
                 HStack(spacing: 4) {
                     Text(name)
