@@ -35,13 +35,10 @@ struct MenuPanel: View {
         }
         .padding(16)
         .frame(width: 320)
-        // Beside the panel, its arrow on the header, like a popover from a Control Center row. NSPopover moves it
-        // to the other side when the panel is too close to the left of the screen.
-        .popover(
-            isPresented: Bindable(model).speakerListOpen,
-            attachmentAnchor: .rect(.rect(CGRect(x: 0, y: 16, width: 1, height: 30))),
-            arrowEdge: .leading
-        ) {
+        // Beside the panel, its arrow on the middle of the panel's side. Pointed at the name, the arrow ended up in
+        // the list's top corner: the panel hangs from the menu bar, so the list can't rise to centre on the name.
+        // NSPopover moves it to the other side when the panel is too close to the left of the screen.
+        .popover(isPresented: Bindable(model).speakerListOpen, attachmentAnchor: .rect(.bounds), arrowEdge: .leading) {
             SpeakerListPopover { showSettings(.speaker) }
                 .environment(model)
         }
