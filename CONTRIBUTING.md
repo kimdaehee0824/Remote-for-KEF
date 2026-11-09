@@ -64,6 +64,17 @@ Set them with `gh secret set NAME < file` (or Settings > Secrets and variables >
 | `DEVELOPER_ID_IDENTITY` | Optional. `Developer ID Application: Name (TEAMID)`. When set, the Mac app is signed with it and notarized; when not, it is signed ad hoc |
 | `DEVELOPER_ID_CERT_P12`, `DEVELOPER_ID_CERT_PASSWORD` | With the identity: the certificate and its private key as base64 of a .p12, and its password |
 | `NOTARY_KEY_P8`, `NOTARY_KEY_ID`, `NOTARY_ISSUER_ID` | With the identity: an App Store Connect API key for notarization |
+| `SIGNPATH_API_TOKEN` | Optional. API token of the SignPath CI user. With the `SIGNPATH_ORGANIZATION_ID` variable it signs the Windows downloads; without them they are not signed |
+
+Repository variables (Settings > Secrets and variables > Actions > Variables) for Windows signing:
+
+| Variable | |
+| --- | --- |
+| `SIGNPATH_ORGANIZATION_ID` | The SignPath organization |
+| `SIGNPATH_PROJECT_SLUG` | Optional, `Remote-for-KEF` when not set |
+| `SIGNPATH_SIGNING_POLICY` | Optional, `release-signing` when not set. `test-signing` builds and signs the downloads but leaves the release alone, for checking the setup |
+
+With signing on, the Release workflow sends two signing requests: the app's own files (`RemoteForKEF.exe`, `RemoteForKEF.dll`, `KefRemote.*.dll`) before Velopack packs them, then the two `Setup.exe`. SignPath holds each one until it is approved there, and the workflow waits up to two hours for each. The SignPath artifact configurations are named `app` and `setup`.
 
 The Windows downloads are not code-signed yet.
 

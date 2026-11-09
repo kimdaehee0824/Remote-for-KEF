@@ -3,7 +3,8 @@ name: Release
 # A version tag (v0.3.0) builds the downloads and the update feeds and attaches them to a draft release for that
 # tag. Publishing the draft makes it the update for every installed copy: Sparkle reads
 # releases/latest/download/appcast.xml, Velopack reads releases.win-x64.json and releases.win-arm64.json.
-# Signing secrets are listed in CONTRIBUTING.md. Without the Developer ID ones the Mac app is signed ad hoc.
+# Signing secrets are listed in CONTRIBUTING.md. Without the Developer ID ones the Mac app is signed ad hoc; without the
+# SignPath token and organization the Windows downloads are not signed.
 # Without the Sparkle key the release has no appcast.xml; add the key, then run this workflow by hand for the tag
 # with "appcast only" to sign one for the Mac zip already on the release.
 
@@ -24,6 +25,8 @@ on:
 
 permissions:
   contents: write
+  # SignPath downloads the files to sign from this run's artifacts.
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
@@ -41,7 +44,12 @@ jobs:
   windows:
     if: ${{ !inputs.appcast_only }}
     runs-on: windows-latest
-    timeout-minutes: 45
+    # With signing, the job waits for two requests to be approved in SignPath (up to two hours each).
+    timeout-minutes: 300
+    env:
+      SIGN: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNPATH_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Remote-for-KEF' }}
+      SIGNPATH_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,6 +74,65 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+      - name: Signing
+        if: env.SIGN != 'true'
+        run: echo "::notice::The Windows downloads are not signed (no SIGNPATH_API_TOKEN secret or SIGNPATH_ORGANIZATION_ID variable)."
+
+      # Only the app's own files. The .NET and Windows App SDK files come signed by Microsoft, and Velopack's
+      # files are not ours to sign.
+      - name: Collect the app's files for signing
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            $dest = New-Item -ItemType Directory -Force "sign/app/win-$arch"
+            $files = Get-ChildItem "dist/RemoteForKEF-win-$arch" -File |
+              Where-Object Name -match '^(RemoteForKEF\.(exe|dll)|KefRemote\.\w+\.dll)$'
+            if ($files.Name -notcontains 'RemoteForKEF.exe') { throw "No RemoteForKEF.exe for win-$arch" }
+            $files | Copy-Item -Destination $dest
+          }
+          Get-ChildItem sign/app -Recurse -File | Format-Table FullName, Length
+          # SignPath only signs files that carry this product version.
+          $productVersion = (Get-Item dist/RemoteForKEF-win-x64/RemoteForKEF.exe).VersionInfo.ProductVersion
+          "PRODUCT_VERSION=$productVersion" >> $env:GITHUB_ENV
+
+      - name: Upload the app's files for signing
+        id: app-unsigned
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-app
+          path: sign/app
+          if-no-files-found: error
+
+      - name: Sign the app's files
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.app-unsigned.outputs.artifact-id }}
+          parameters: |
+            version: "${{ env.PRODUCT_VERSION }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: sign/app-signed
+
+      - name: Put the signed files in the app
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            $signed = Get-ChildItem "sign/app-signed/win-$arch" -File
+            $expected = Get-ChildItem "sign/app/win-$arch" -File
+            if ($signed.Count -ne $expected.Count) { throw "SignPath returned $($signed.Count) files for win-$arch, expected $($expected.Count)" }
+            $signed | Copy-Item -Destination "dist/RemoteForKEF-win-$arch" -Force
+            $signed | ForEach-Object { ./.github/scripts/check-signature.ps1 "dist/RemoteForKEF-win-$arch/$($_.Name)" }
+          }
+
       # One channel per architecture, so each install only ever updates to its own build.
       # Installs to %LocalAppData%\RemoteForKEF without admin rights, with a Start menu shortcut.
       - name: Package with Velopack
@@ -87,6 +154,49 @@ jobs:
             Copy-Item "$out/releases.win-$arch.json" upload/
           }
           Get-ChildItem upload | Format-Table Name, Length
+
+      # The installers are made by Velopack around the signed app, so they are signed in a second request.
+      - name: Collect the installers for signing
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force sign/setup | Out-Null
+          Copy-Item upload/RemoteForKEF-win-x64-Setup.exe, upload/RemoteForKEF-win-arm64-Setup.exe sign/setup/
+
+      - name: Upload the installers for signing
+        id: setup-unsigned
+        if: env.SIGN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-setup
+          path: sign/setup
+          if-no-files-found: error
+
+      - name: Sign the installers
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ env.SIGNPATH_PROJECT }}
+          signing-policy-slug: ${{ env.SIGNPATH_POLICY }}
+          artifact-configuration-slug: setup
+          github-artifact-id: ${{ steps.setup-unsigned.outputs.artifact-id }}
+          parameters: |
+            version: "${{ env.VERSION }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: sign/setup-signed
+
+      - name: Put the signed installers in the release
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            $name = "RemoteForKEF-win-$arch-Setup.exe"
+            Copy-Item "sign/setup-signed/$name" upload/ -Force
+            ./.github/scripts/check-signature.ps1 "upload/$name"
+          }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -199,12 +309,15 @@ jobs:
           path: macos/upload
 
   release:
-    if: ${{ !inputs.appcast_only }}
+    # A test-signing run (SIGNPATH_SIGNING_POLICY=test-signing) only leaves its downloads on the run.
+    if: ${{ !inputs.appcast_only && vars.SIGNPATH_SIGNING_POLICY != 'test-signing' }}
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      # Only the downloads, not the files uploaded for signing.
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: upload
           merge-multiple: true
 
