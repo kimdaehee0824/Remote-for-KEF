@@ -37,6 +37,6 @@ KEF LSX II LTで確認しています。LSX II、LS50 Wireless II、LS60、XIO�
 - Robert Oberdorfer氏の[kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume)。正確な音量合わせと音量ステップは、このプロジェクトが公開している音量カーブの測定値をもとにしています。
 - [homeassistant-kef](https://github.com/EvotecIT/homeassistant-kef)。KEFのネットワークプロトコルを参考にしました。
 
-[コントリビューション](CONTRIBUTING.md) · [MIT License](LICENSE) · [オープンソースライセンス](THIRD-PARTY-NOTICES.md)
+[コントリビューション](CONTRIBUTING.md) · [MIT License](LICENSE) · [オープンソースライセンス](THIRD-PARTY-NOTICES.md) · [コード署名ポリシー](docs/code-signing-policy.md) · [プライバシー](docs/privacy.md)
 
 KEFとは関係のない非公式プロジェクトです。KEFおよび製品名は各社の商標です。

@@ -38,6 +38,6 @@ Tested on the KEF LSX II LT. The LSX II, LS50 Wireless II, LS60, XIO and LS LUXE
 - [kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume) by Robert Oberdorfer, whose volume curve measurements are behind accurate volume and the volume steps.
 - [homeassistant-kef](https://github.com/EvotecIT/homeassistant-kef), the reference for the KEF network protocol.
 
-[Contributing](CONTRIBUTING.md) · [MIT License](LICENSE) · [Third-party notices](THIRD-PARTY-NOTICES.md)
+[Contributing](CONTRIBUTING.md) · [MIT License](LICENSE) · [Third-party notices](THIRD-PARTY-NOTICES.md) · [Code signing policy](docs/code-signing-policy.md) · [Privacy](docs/privacy.md)
 
 Not affiliated with or endorsed by KEF. KEF and product names are trademarks of their owners.

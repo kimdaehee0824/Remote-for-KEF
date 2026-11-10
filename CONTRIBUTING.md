@@ -41,7 +41,7 @@ Every change on main goes out as a release.
 
 1. Raise the version: `Version` in `windows/Directory.Build.props`, `CFBundleShortVersionString` in `macos/Resources/Info.plist`, and `CFBundleVersion` next to it by one (Sparkle compares that number).
 2. Commit as `version :: x.y.z`, push, then push the tag: `git tag vx.y.z && git push origin vx.y.z`.
-3. The Release workflow builds both apps and attaches them to a draft release for the tag. Write the notes and publish it. Installed copies only see published releases.
+3. The Release workflow builds both apps and attaches them to a draft release for the tag. Write the notes, end them with a link to the [code signing policy](docs/code-signing-policy.md), and publish it. Installed copies only see published releases.
 
 | Asset | |
 | --- | --- |

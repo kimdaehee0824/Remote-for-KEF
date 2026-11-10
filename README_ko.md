@@ -37,6 +37,6 @@ KEF LSX II LT에서 확인했습니다. LSX II, LS50 Wireless II, LS60, XIO, LS 
 - Robert Oberdorfer의 [kef-lsx-volume](https://github.com/roberdorfer/kef-lsx-volume). 정확한 음량 맞추기와 음량 단계는 이 프로젝트가 공개한 음량 곡선 측정값을 바탕으로 했습니다.
 - [homeassistant-kef](https://github.com/EvotecIT/homeassistant-kef). KEF 네트워크 프로토콜을 참고했습니다.
 
-[기여하기](CONTRIBUTING.md) · [MIT License](LICENSE) · [오픈소스 고지](THIRD-PARTY-NOTICES.md)
+[기여하기](CONTRIBUTING.md) · [MIT License](LICENSE) · [오픈소스 고지](THIRD-PARTY-NOTICES.md) · [코드 서명 정책](docs/code-signing-policy.md) · [개인정보](docs/privacy.md)
 
 KEF와 관계없는 비공식 프로젝트입니다. KEF와 제품명은 각 소유자의 상표입니다.
