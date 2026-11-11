@@ -46,12 +46,31 @@ static class WindowHelpers
     /// caption's height after SetBorderAndTitleBar(true, false) removed it, which leaves an empty band in the popup,
     /// so the frame is taken from the window's current outer and client sizes instead.
     /// </summary>
-    public static void SetClientSize(AppWindow appWindow, SizeInt32 client)
+    public static void SetClientSize(AppWindow appWindow, SizeInt32 client) => appWindow.Resize(OuterSize(appWindow, client));
+
+    static SizeInt32 OuterSize(AppWindow appWindow, SizeInt32 client)
     {
         SizeInt32 outer = appWindow.Size, inner = appWindow.ClientSize;
         int frameWidth = Math.Max(0, outer.Width - inner.Width), frameHeight = Math.Max(0, outer.Height - inner.Height);
-        appWindow.Resize(new SizeInt32(client.Width + frameWidth, client.Height + frameHeight));
+        return new SizeInt32(client.Width + frameWidth, client.Height + frameHeight);
     }
+
+    // A popup that must never take focus (the volume indicator) is sized, moved and shown with Win32 calls that say
+    // so on every step instead of relying on AppWindow's defaults, so a game or the app being typed in keeps focus.
+
+    /// <summary><see cref="SetClientSize"/> without activating the window.</summary>
+    public static void SetClientSizeInactive(IntPtr hwnd, AppWindow appWindow, SizeInt32 client)
+    {
+        var size = OuterSize(appWindow, client);
+        Win32.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, size.Width, size.Height, Win32.SWP_NOMOVE | Win32.SWP_NOZORDER | Win32.SWP_NOACTIVATE);
+    }
+
+    /// <summary>Moves the window and puts it back above other always-on-top windows, without activating it.</summary>
+    public static void MoveInactive(IntPtr hwnd, PointInt32 position) =>
+        Win32.SetWindowPos(hwnd, Win32.HWND_TOPMOST, position.X, position.Y, 0, 0, Win32.SWP_NOSIZE | Win32.SWP_NOACTIVATE);
+
+    /// <summary>Shows the window where it is without activating it.</summary>
+    public static void ShowInactive(IntPtr hwnd) => Win32.ShowWindow(hwnd, Win32.SW_SHOWNA);
 
     public static DisplayArea DisplayAt(PointInt32 point) => DisplayArea.GetFromPoint(point, DisplayAreaFallback.Nearest);
 
@@ -101,6 +120,46 @@ static class WindowHelpers
         Win32.GetCursorPos(out var p) ? new PointInt32(p.X, p.Y) : new PointInt32(0, 0);
 
     public static double ScaleAt(PointInt32 point) => Win32.DpiAt(point.X, point.Y) / 96.0;
+
+    /// <summary>
+    /// A game or a video is in front in full screen: the foreground window fills its monitor, or Windows reports a
+    /// Direct3D app in exclusive full screen. See <see cref="FullScreenApp"/>.
+    /// </summary>
+    public static bool FullScreenInFront()
+    {
+        if (Foreground() is { } window && FullScreenApp.FillsMonitor(window)) return true;
+        return Win32.SHQueryUserNotificationState(out int state) == 0 && state == Win32.QUNS_RUNNING_D3D_FULL_SCREEN;
+    }
+
+    static ForegroundWindow? Foreground()
+    {
+        IntPtr hwnd = Win32.GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return null;
+        IntPtr root = Win32.GetAncestor(hwnd, Win32.GA_ROOT);
+        if (root != IntPtr.Zero) hwnd = root;
+        if (!Win32.IsWindowVisible(hwnd) || Win32.IsIconic(hwnd)) return null;
+
+        var origin = new Win32.POINT();
+        if (!Win32.GetClientRect(hwnd, out var client) || !Win32.ClientToScreen(hwnd, ref origin)) return null;
+        var info = new Win32.MONITORINFO { cbSize = Marshal.SizeOf<Win32.MONITORINFO>() };
+        IntPtr monitor = Win32.MonitorFromWindow(hwnd, Win32.MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero || !Win32.GetMonitorInfo(monitor, ref info)) return null;
+
+        Win32.GetWindowThreadProcessId(hwnd, out uint process);
+        IntPtr shell = Win32.GetShellWindow();
+        uint shellProcess = 0;
+        if (shell != IntPtr.Zero) Win32.GetWindowThreadProcessId(shell, out shellProcess);
+        long style = Win32.GetWindowLongPtr(hwnd, Win32.GWL_STYLE).ToInt64();
+        var m = info.rcMonitor;
+        return new ForegroundWindow(
+            Client: new PixelRect(origin.X, origin.Y, client.Width, client.Height),
+            Monitor: new PixelRect(m.Left, m.Top, m.Width, m.Height),
+            Maximized: Win32.IsZoomed(hwnd),
+            HasCaption: (style & Win32.WS_CAPTION) == Win32.WS_CAPTION,
+            // The desktop fills the monitor too; it and the taskbar belong to the shell's process.
+            IsShell: hwnd == shell || (shellProcess != 0 && process == shellProcess),
+            IsOwn: process == (uint)Environment.ProcessId);
+    }
 
     /// <summary>True when the foreground window is <paramref name="hwnd"/> or one of its popups (menus, tooltips).</summary>
     public static bool OwnsForeground(IntPtr hwnd)

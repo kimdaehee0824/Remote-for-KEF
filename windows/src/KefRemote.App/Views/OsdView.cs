@@ -19,6 +19,8 @@ namespace KefRemote.App.Views;
 /// Volume display at the bottom right of the monitor under the pointer (design W7). Never takes focus, so a
 /// hotkey pressed while typing elsewhere does not steal the keyboard. Wheel changes the volume, the speaker
 /// icon toggles mute. With more than one speaker the line under the bar names the one the keys work on.
+/// Not shown at all while a game or a video is in front in full screen: the keys change the volume and nothing
+/// appears over the picture (see <see cref="FullScreenApp"/>).
 /// </summary>
 sealed class OsdView : IVolumeOsd
 {
@@ -28,6 +30,7 @@ sealed class OsdView : IVolumeOsd
     readonly AppHost host;
     readonly Window window;
     readonly AppWindow appWindow;
+    readonly IntPtr hwnd;
     readonly Grid root, surface;
     readonly FontIcon icon = Ui.Icon(Glyphs.Volume2, 16);
     readonly Slider bar = new() { Minimum = 0, Maximum = 100, IsHitTestVisible = false, IsTabStop = false, IsThumbToolTipEnabled = false, VerticalAlignment = VerticalAlignment.Center };
@@ -42,6 +45,7 @@ sealed class OsdView : IVolumeOsd
     ulong? placedOn;
     PixelRect freeArea;
     bool closing;
+    bool heldBack;
 
     /// <summary>Wheel and icon clicks, routed like hotkeys.</summary>
     public event Action<HotkeyAction>? Input;
@@ -100,6 +104,7 @@ sealed class OsdView : IVolumeOsd
         window = new Window { Title = Loc.T("Remote for KEF 음량", "Remote for KEF Volume", "Remote for KEF 音量"), Content = surface };
         if (acrylic) window.SystemBackdrop = new AlwaysActiveAcrylic();
         appWindow = WindowHelpers.AppWindowOf(window);
+        hwnd = WindowHelpers.Hwnd(window);
         WindowHelpers.MakePopup(window, activates: false);
         appWindow.Closing += (_, e) =>
         {
@@ -132,6 +137,16 @@ sealed class OsdView : IVolumeOsd
 
     public void ShowLevel(OsdContent content)
     {
+        // A full-screen game or video keeps the whole screen and its focus; the volume has changed all the same.
+        if (!host.SelfTest && WindowHelpers.FullScreenInFront())
+        {
+            if (!heldBack) Log.Write("volume indicator held back: a full-screen app is in front");
+            heldBack = true;
+            HideNow();
+            return;
+        }
+        heldBack = false;
+
         limit = content.Limit;
         int level = content.Volume ?? 0;
         bar.Value = level;
@@ -155,7 +170,7 @@ sealed class OsdView : IVolumeOsd
         if (!visible)
         {
             visible = true;
-            appWindow.Show(false);
+            WindowHelpers.ShowInactive(hwnd);
         }
         root.Opacity = 1;
         if (!hovering) StartHideTimer(content.IsError ? ErrorShowMs : ShowMs);
@@ -172,10 +187,10 @@ sealed class OsdView : IVolumeOsd
             placedOn = display.DisplayId.Value;
         }
         double scale = WindowHelpers.ScaleAt(cursor);
-        WindowHelpers.SetClientSize(appWindow, new SizeInt32((int)Math.Ceiling(OsdWidth * scale), (int)Math.Ceiling(height * scale)));
+        WindowHelpers.SetClientSizeInactive(hwnd, appWindow, new SizeInt32((int)Math.Ceiling(OsdWidth * scale), (int)Math.Ceiling(height * scale)));
         var size = appWindow.Size;
         var (x, y) = TaskbarPlacement.BottomRight(freeArea, size.Width, size.Height, (int)Math.Round(EdgeMarginDip * scale));
-        appWindow.Move(new PointInt32(x, y));
+        WindowHelpers.MoveInactive(hwnd, new PointInt32(x, y));
     }
 
     void PlaceLimitTick()
