@@ -76,7 +76,7 @@ When the speaker plays over Wi-Fi or Bluetooth (Spotify Connect, AirPlay, Chrome
 
 ### Shortcuts and the volume indicator
 
-From any app, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> mutes or unmutes. When the volume changes, an indicator shows briefly in the bottom-right corner of the monitor with the mouse pointer.
+From any app, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> changes the volume and <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd> mutes or unmutes. When the volume changes, an indicator shows briefly in the bottom-right corner of the monitor with the mouse pointer. While a full-screen game or video is in front, only the volume changes and the indicator stays hidden, so nothing covers the picture.
 
 <p><img src="images/guide/W4-en.png" width="302" alt="Volume indicator"></p>
 

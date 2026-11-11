@@ -76,7 +76,7 @@ Remote for KEFの画面を順に説明します。写真の番号と、その下
 
 ### ショートカットと音量表示
 
-どのアプリからでも<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd>で音量を、<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>でミュートを切り替えます。音量が変わると、マウスポインターのあるモニターの右下に音量表示が少しの間出ます。
+どのアプリからでも<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd>で音量を、<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>でミュートを切り替えます。音量が変わると、マウスポインターのあるモニターの右下に音量表示が少しの間出ます。全画面のゲームや動画が前面にあるときは、画面を覆わないよう音量表示を出さずに音量だけを変えます。
 
 <p><img src="images/guide/W4-ja.png" width="302" alt="音量表示"></p>
 

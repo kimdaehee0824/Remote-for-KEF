@@ -76,7 +76,7 @@ Remote for KEF의 화면을 하나씩 살펴봅니다. 사진의 번호와 아�
 
 ### 단축키와 음량 표시창
 
-어느 앱에서든 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd>로 음량을, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>으로 음소거를 바꿉니다. 음량이 바뀌면 마우스 포인터가 있는 모니터의 오른쪽 아래에 표시창이 잠깐 나타납니다.
+어느 앱에서든 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd>로 음량을, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>M</kbd>으로 음소거를 바꿉니다. 음량이 바뀌면 마우스 포인터가 있는 모니터의 오른쪽 아래에 표시창이 잠깐 나타납니다. 전체 화면 게임이나 영상이 앞에 있을 때는 화면을 가리지 않도록 표시창 없이 음량만 바뀝니다.
 
 <p><img src="images/guide/W4-ko.png" width="302" alt="음량 표시창"></p>
 
